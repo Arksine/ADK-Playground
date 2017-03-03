@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">AndroidAccessoryTest</string>
+    <string name="action_settings">Settings</string>
+    <string name="service_name">Accessory Test</string>
+
+    <string name="NOTIFICATION_CONNECTED">Accessory Connected</string>
+    <string name="NOTIFICATION_NOT_CONNECTED">Accessory Not Connected</string>
+
+    <string name="ACTION_STOP_SERVICE">com.arksine.androidaccessorytest.STOP_SERVICE</string>
+</resources>

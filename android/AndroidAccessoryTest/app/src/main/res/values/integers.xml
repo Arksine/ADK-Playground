@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="ONGOING_NOTIFICATION_ID">8002</integer>
+    <integer name="REQUEST_STOP_SERVICE">6840</integer>
+    <integer name="REQUEST_START_MAIN_ACITIVITY">6841</integer>
+
+</resources>
