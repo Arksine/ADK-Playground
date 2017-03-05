@@ -1,15 +1,51 @@
+#!/usr/bin/env python
+
 # Copyright (C) 2017 Eric Callahan
 # TODO: add license, code taken from libusb1 and pyusb, credit them
 
 # pylint: disable=no-member
-# pylint: disable=W0511,W0622,W0613,W0603,R0902,C0103,W0614,W0401,W0212,R0903
+# pylint: disable=W0511,W0622,W0613,W0603,R0902,C0103,W0614,W0401,W0212,R0903,C0111
 
 from ctypes import *
 import errno
-import os, sys, inspect
+from enum import Enum
 
 __author__ = 'Eric Callahan'
 
+# __all__ attribtue only includes basic functionality needed for uvclite.
+__all__ = [
+    'buffer_at',
+    'str_error_map',
+    'libuvc_errno_map',
+    'uvc_error',
+    'uvc_init',
+    'uvc_exit',
+    'uvc_find_device',
+    'uvc_get_device_list',
+    'uvc_free_device_list',
+    'uvc_ref_device',
+    'uvc_unref_device',
+    'uvc_open',
+    'uvc_close',
+    'uvc_device_descriptor',
+    'uvc_device_descriptor_p',
+    'uvc_get_device_descriptor',
+    'uvc_free_device_descriptor',
+    'uvc_stream_ctrl',
+    'uvc_get_stream_ctrl_format_size',
+    'uvc_frame_callback',
+    'uvc_null_frame_callback',
+    'uvc_stream_open_ctrl',
+    'uvc_stream_start',
+    'uvc_start_streaming',
+    'uvc_stream_stop',
+    'uvc_stream_close',
+    'uvc_stop_streaming',
+    'uvc_frame',
+    'uvc_frame_p',
+    'uvc_stream_get_frame',
+    'uvc_print_diag'
+]
 
 def buffer_at(address, length):
     """
@@ -24,95 +60,97 @@ _libuvc = CDLL('libuvc.so')
 # libuvc.h
 
 # enum uvc_error (uvc_error_t) return codes
-UVC_SUCCESS = 0
-UVC_ERROR_IO = -1
-UVC_ERROR_INVALID_PARAM = -2
-UVC_ERROR_ACCESS = -3
-UVC_ERROR_NO_DEVICE = -4
-UVC_ERROR_NOT_FOUND = -5
-UVC_ERROR_BUSY = -6
-UVC_ERROR_TIMEOUT = -7
-UVC_ERROR_OVERFLOW = -8
-UVC_ERROR_PIPE = -9
-UVC_ERROR_INTERRUPTED = -10
-UVC_ERROR_NO_MEM = -11
-UVC_ERROR_NOT_SUPPORTED = -12
-UVC_ERROR_INVALID_DEVICE = -50
-UVC_ERROR_INVALID_MODE = -51
-UVC_ERROR_CALLBACK_EXISTS = -52
-UVC_ERROR_OTHER = -99
+class uvc_error(Enum):
+    UVC_SUCCESS = 0
+    UVC_ERROR_IO = -1
+    UVC_ERROR_INVALID_PARAM = -2
+    UVC_ERROR_ACCESS = -3
+    UVC_ERROR_NO_DEVICE = -4
+    UVC_ERROR_NOT_FOUND = -5
+    UVC_ERROR_BUSY = -6
+    UVC_ERROR_TIMEOUT = -7
+    UVC_ERROR_OVERFLOW = -8
+    UVC_ERROR_PIPE = -9
+    UVC_ERROR_INTERRUPTED = -10
+    UVC_ERROR_NO_MEM = -11
+    UVC_ERROR_NOT_SUPPORTED = -12
+    UVC_ERROR_INVALID_DEVICE = -50
+    UVC_ERROR_INVALID_MODE = -51
+    UVC_ERROR_CALLBACK_EXISTS = -52
+    UVC_ERROR_OTHER = -99
 
 # map return codes to string messages
 str_error_map = {
-    UVC_SUCCESS:'Success (no error)',
-    UVC_ERROR_IO:'Input/output error',
-    UVC_ERROR_INVALID_PARAM:'Invalid parameter',
-    UVC_ERROR_ACCESS:'Access denied',
-    UVC_ERROR_NO_DEVICE:'No such device',
-    UVC_ERROR_NOT_FOUND:'Not found',
-    UVC_ERROR_BUSY:"Resource Busy",
-    UVC_ERROR_TIMEOUT:'Operation timed out',
-    UVC_ERROR_OVERFLOW:'Overflow',
-    UVC_ERROR_PIPE:'Pipe Error',
-    UVC_ERROR_INTERRUPTED:'System call interrupted (perhaps due to signal)',
-    UVC_ERROR_NO_MEM:'Insufficient memory',
-    UVC_ERROR_NOT_SUPPORTED:'Operation not supported or unimplemented on this platform',
-    UVC_ERROR_INVALID_DEVICE:'Invalid device',
-    UVC_ERROR_INVALID_MODE:'Invalid mode',
-    UVC_ERROR_CALLBACK_EXISTS:'Callback exists, cannot poll',
-    UVC_ERROR_OTHER:'Unknown Error'
+    uvc_error.UVC_SUCCESS:'Success (no error)',
+    uvc_error.UVC_ERROR_IO:'Input/output error',
+    uvc_error.UVC_ERROR_INVALID_PARAM:'Invalid parameter',
+    uvc_error.UVC_ERROR_ACCESS:'Access denied',
+    uvc_error.UVC_ERROR_NO_DEVICE:'No such device',
+    uvc_error.UVC_ERROR_NOT_FOUND:'Not found',
+    uvc_error.UVC_ERROR_BUSY:"Resource Busy",
+    uvc_error.UVC_ERROR_TIMEOUT:'Operation timed out',
+    uvc_error.UVC_ERROR_OVERFLOW:'Overflow',
+    uvc_error.UVC_ERROR_PIPE:'Pipe Error',
+    uvc_error.UVC_ERROR_INTERRUPTED:'System call interrupted (perhaps due to signal)',
+    uvc_error.UVC_ERROR_NO_MEM:'Insufficient memory',
+    uvc_error.UVC_ERROR_INVALID_DEVICE:'Invalid device',
+    uvc_error.UVC_ERROR_INVALID_MODE:'Invalid mode',
+    uvc_error.UVC_ERROR_CALLBACK_EXISTS:'Callback exists, cannot poll',
+    uvc_error.UVC_ERROR_OTHER:'Unknown Error'
 }
 
 # map return codes to error numbers
 libuvc_errno_map = {
-    0:None,
-    UVC_ERROR_IO:errno.__dict__.get('EIO', None),
-    UVC_ERROR_INVALID_PARAM:errno.__dict__.get('EINVAL', None),
-    UVC_ERROR_ACCESS:errno.__dict__.get('EACCES', None),
-    UVC_ERROR_NO_DEVICE:errno.__dict__.get('ENODEV', None),
-    UVC_ERROR_NOT_FOUND:errno.__dict__.get('ENOENT', None),
-    UVC_ERROR_BUSY:errno.__dict__.get('EBUSY', None),
-    UVC_ERROR_TIMEOUT:errno.__dict__.get('ETIMEDOUT', None),
-    UVC_ERROR_OVERFLOW:errno.__dict__.get('EOVERFLOW', None),
-    UVC_ERROR_PIPE:errno.__dict__.get('EPIPE', None),
-    UVC_ERROR_INTERRUPTED:errno.__dict__.get('EINTR', None),
-    UVC_ERROR_NO_MEM:errno.__dict__.get('ENOMEM', None),
-    UVC_ERROR_NOT_SUPPORTED:errno.__dict__.get('EOPNOTSUPP', None),
-    UVC_ERROR_INVALID_DEVICE:errno.__dict__.get('EBADSLT', None),
-    UVC_ERROR_INVALID_MODE:errno.__dict__.get('EBADR', None),
-    UVC_ERROR_CALLBACK_EXISTS:errno.__dict__.get('EBADE', None),
-    UVC_ERROR_OTHER:None
+    uvc_error.UVC_SUCCESS:None,
+    uvc_error.UVC_ERROR_IO:errno.__dict__.get('EIO', None),
+    uvc_error.UVC_ERROR_INVALID_PARAM:errno.__dict__.get('EINVAL', None),
+    uvc_error.UVC_ERROR_ACCESS:errno.__dict__.get('EACCES', None),
+    uvc_error.UVC_ERROR_NO_DEVICE:errno.__dict__.get('ENODEV', None),
+    uvc_error.UVC_ERROR_NOT_FOUND:errno.__dict__.get('ENOENT', None),
+    uvc_error.UVC_ERROR_BUSY:errno.__dict__.get('EBUSY', None),
+    uvc_error.UVC_ERROR_TIMEOUT:errno.__dict__.get('ETIMEDOUT', None),
+    uvc_error.UVC_ERROR_OVERFLOW:errno.__dict__.get('EOVERFLOW', None),
+    uvc_error.UVC_ERROR_PIPE:errno.__dict__.get('EPIPE', None),
+    uvc_error.UVC_ERROR_INTERRUPTED:errno.__dict__.get('EINTR', None),
+    uvc_error.UVC_ERROR_NO_MEM:errno.__dict__.get('ENOMEM', None),
+    uvc_error.UVC_ERROR_NOT_SUPPORTED:errno.__dict__.get('EOPNOTSUPP', None),
+    uvc_error.UVC_ERROR_INVALID_DEVICE:errno.__dict__.get('EBADSLT', None),
+    uvc_error.UVC_ERROR_INVALID_MODE:errno.__dict__.get('EBADR', None),
+    uvc_error.UVC_ERROR_CALLBACK_EXISTS:errno.__dict__.get('EBADE', None),
+    uvc_error.UVC_ERROR_OTHER:None
 }
 
 # enum uvc_frame_format
-UVC_FRAME_FORMAT_UNKNOWN = 0
-UVC_FRAME_FORMAT_ANY = 0
-UVC_FRAME_FORMAT_UNCOMPRESSED = 1
-UVC_FRAME_FORMAT_COMPRESSED = 2
-UVC_FRAME_FORMAT_YUYV = 3
-UVC_FRAME_FORMAT_UYVY = 4
-UVC_FRAME_FORMAT_RGB = 5
-UVC_FRAME_FORMAT_BGR = 6
-UVC_FRAME_FORMAT_MJPEG = 7
-UVC_FRAME_FORMAT_GRAY8 = 8
-UVC_FRAME_FORMAT_BY8 = 9
-UVC_FRAME_FORMAT_COUNT = 10
+class uvc_frame_format(Enum):
+    UVC_FRAME_FORMAT_UNKNOWN = 0
+    UVC_FRAME_FORMAT_ANY = 0
+    UVC_FRAME_FORMAT_UNCOMPRESSED = 1
+    UVC_FRAME_FORMAT_COMPRESSED = 2
+    UVC_FRAME_FORMAT_YUYV = 3
+    UVC_FRAME_FORMAT_UYVY = 4
+    UVC_FRAME_FORMAT_RGB = 5
+    UVC_FRAME_FORMAT_BGR = 6
+    UVC_FRAME_FORMAT_MJPEG = 7
+    UVC_FRAME_FORMAT_GRAY8 = 8
+    UVC_FRAME_FORMAT_BY8 = 9
+    UVC_FRAME_FORMAT_COUNT = 10
 
 # enum uvc_vs_des_subtype
-UVC_VS_UNDEFINED = 0x00
-UVC_VS_INPUT_HEADER = 0x01
-UVC_VS_OUTPUT_HEADER = 0x02
-UVC_VS_STILL_IMAGE_FRAME = 0x03
-UVC_VS_FORMAT_UNCOMPRESSED = 0x04
-UVC_VS_FRAME_UNCOMPRESSED = 0x05
-UVC_VS_FORMAT_MJPEG = 0x06
-UVC_VS_FRAME_MJPEG = 0x07
-UVC_VS_FORMAT_MPEG2TS = 0x0a
-UVC_VS_FORMAT_DV = 0x0c
-UVC_VS_COLORFORMAT = 0x0d
-UVC_VS_FORMAT_FRAME_BASED = 0x10
-UVC_VS_FRAME_FRAME_BASED = 0x11
-UVC_VS_FORMAT_STREAM_BASED = 0x12
+class uvc_vs_des_subtype(Enum):
+    UVC_VS_UNDEFINED = 0x00
+    UVC_VS_INPUT_HEADER = 0x01
+    UVC_VS_OUTPUT_HEADER = 0x02
+    UVC_VS_STILL_IMAGE_FRAME = 0x03
+    UVC_VS_FORMAT_UNCOMPRESSED = 0x04
+    UVC_VS_FRAME_UNCOMPRESSED = 0x05
+    UVC_VS_FORMAT_MJPEG = 0x06
+    UVC_VS_FRAME_MJPEG = 0x07
+    UVC_VS_FORMAT_MPEG2TS = 0x0a
+    UVC_VS_FORMAT_DV = 0x0c
+    UVC_VS_COLORFORMAT = 0x0d
+    UVC_VS_FORMAT_FRAME_BASED = 0x10
+    UVC_VS_FRAME_FRAME_BASED = 0x11
+    UVC_VS_FORMAT_STREAM_BASED = 0x12
 
 # IMPORTANT: C enums are mapped to c_int in python
 
@@ -126,17 +164,17 @@ class _bit_union(Union):
 
 class uvc_format_desc(Structure):
     pass
+
 uvc_format_desc_p = POINTER(uvc_format_desc)
 
 class uvc_frame_desc(Structure):
     pass
-uvc_frame_desc_p = POINTER(uvc_frame_desc)
 
+uvc_frame_desc_p = POINTER(uvc_frame_desc)
 uvc_frame_desc._fields_ = [('parent', uvc_format_desc_p),
                            ('prev', uvc_frame_desc_p),
                            ('next', uvc_frame_desc_p),
-                           ('bDescriptorSubtype', c_int), #TODO: not sure if this is c_uint8 or
-                                                          # c_int - enum uvc_vs_desc_subtype
+                           ('bDescriptorSubtype', c_int), # enum uvc_vs_desc_subtype
                            ('bFrameIndex', c_uint8),
                            ('bmCapabilities', c_uint8),
                            ('wWidth', c_uint16),
@@ -170,35 +208,165 @@ uvc_format_desc._fields_ = [('parent', c_void_p),
                             ('frame_descs', uvc_frame_desc_p)]
 
 # enum_uvc_req_code
-UVC_RC_UNDEFINED = 0x00
-UVC_SET_CUR = 0x01
-UVC_GET_CUR = 0x81
-UVC_GET_MIN = 0x82
-UVC_GET_MAX = 0x83
-UVC_GET_RES = 0x84
-UVC_GET_LEN = 0x85
-UVC_GET_INFO = 0x86
-UVC_GET_DEF = 0x87
+class uvc_req_code(Enum):
+    UVC_RC_UNDEFINED = 0x00
+    UVC_SET_CUR = 0x01
+    UVC_GET_CUR = 0x81
+    UVC_GET_MIN = 0x82
+    UVC_GET_MAX = 0x83
+    UVC_GET_RES = 0x84
+    UVC_GET_LEN = 0x85
+    UVC_GET_INFO = 0x86
+    UVC_GET_DEF = 0x87
 
 # enum uvc_device_power_mode
-UVC_VC_VIDEO_POWER_MODE_FULL = 0x000b
-UVC_VC_VIDEO_POWER_MODE_DEVICE_DEPENDENT = 0x001b
+class uvc_device_power_mode(Enum):
+    UVC_VC_VIDEO_POWER_MODE_FULL = 0x000b
+    UVC_VC_VIDEO_POWER_MODE_DEVICE_DEPENDENT = 0x001b
 
 # TODO:
 # enum uvc_ct_ctrl_selector
+class uvc_ct_ctrl_selector(Enum):
+    UVC_CT_CONTROL_UNDEFINED = 0x00
+    UVC_CT_SCANNING_MODE_CONTROL = 0x01
+    UVC_CT_AE_MODE_CONTROL = 0x02
+    UVC_CT_AE_PRIORITY_CONTROL = 0x03
+    UVC_CT_EXPOSURE_TIME_ABSOLUTE_CONTROL = 0x04
+    UVC_CT_EXPOSURE_TIME_RELATIVE_CONTROL = 0x05
+    UVC_CT_FOCUS_ABSOLUTE_CONTROL = 0x06
+    UVC_CT_FOCUS_RELATIVE_CONTROL = 0x07
+    UVC_CT_FOCUS_AUTO_CONTROL = 0x08
+    UVC_CT_IRIS_ABSOLUTE_CONTROL = 0x09
+    UVC_CT_IRIS_RELATIVE_CONTROL = 0x0a
+    UVC_CT_ZOOM_ABSOLUTE_CONTROL = 0x0b
+    UVC_CT_ZOOM_RELATIVE_CONTROL = 0x0c
+    UVC_CT_PANTILT_ABSOLUTE_CONTROL = 0x0d
+    UVC_CT_PANTILT_RELATIVE_CONTROL = 0x0e
+    UVC_CT_ROLL_ABSOLUTE_CONTROL = 0x0f
+    UVC_CT_ROLL_RELATIVE_CONTROL = 0x10
+    UVC_CT_PRIVACY_CONTROL = 0x11
+    UVC_CT_FOCUS_SIMPLE_CONTROL = 0x12
+    UVC_CT_DIGITAL_WINDOW_CONTROL = 0x13
+    UVC_CT_REGION_OF_INTEREST_CONTROL = 0x14
+
 # enum uvc_pu_ctrl_selector
+class uvc_pu_ctrl_selector(Enum):
+    UVC_PU_CONTROL_UNDEFINED = 0x00
+    UVC_PU_BACKLIGHT_COMPENSATION_CONTROL = 0x01
+    UVC_PU_BRIGHTNESS_CONTROL = 0x02
+    UVC_PU_CONTRAST_CONTROL = 0x03
+    UVC_PU_GAIN_CONTROL = 0x04
+    UVC_PU_POWER_LINE_FREQUENCY_CONTROL = 0x05
+    UVC_PU_HUE_CONTROL = 0x06
+    UVC_PU_SATURATION_CONTROL = 0x07
+    UVC_PU_SHARPNESS_CONTROL = 0x08
+    UVC_PU_GAMMA_CONTROL = 0x09
+    UVC_PU_WHITE_BALANCE_TEMPERATURE_CONTROL = 0x0a
+    UVC_PU_WHITE_BALANCE_TEMPERATURE_AUTO_CONTROL = 0x0b
+    UVC_PU_WHITE_BALANCE_COMPONENT_CONTROL = 0x0c
+    UVC_PU_WHITE_BALANCE_COMPONENT_AUTO_CONTROL = 0x0d
+    UVC_PU_DIGITAL_MULTIPLIER_CONTROL = 0x0e
+    UVC_PU_DIGITAL_MULTIPLIER_LIMIT_CONTROL = 0x0f
+    UVC_PU_HUE_AUTO_CONTROL = 0x10
+    UVC_PU_ANALOG_VIDEO_STANDARD_CONTROL = 0x11
+    UVC_PU_ANALOG_LOCK_STATUS_CONTROL = 0x12
+    UVC_PU_CONTRAST_AUTO_CONTROL = 0x13
+
 # enum uvc_term_type
+class uvc_term_type(Enum):
+    UVC_TT_VENDOR_SPECIFIC = 0x0100
+    UVC_TT_STREAMING = 0x0101
+
 # enum uvc_it_type
+class uvc_it_type(Enum):
+    UVC_ITT_VENDOR_SPECIFIC = 0x0200
+    UVC_ITT_CAMERA = 0x0201
+    UVC_ITT_MEDIA_TRANSPORT_INPUT = 0x0202
+
 # enum_uvc_ot_type
+class uvc_ot_type(Enum):
+    UVC_OTT_VENDOR_SPECIFIC = 0x0300
+    UVC_OTT_DISPLAY = 0x0301
+    UVC_OTT_MEDIA_TRANSPORT_OUTPUT = 0x0302
+
 # enum_uvc_et_type
+class uvc_et_type(Enum):
+    UVC_EXTERNAL_VENDOR_SPECIFIC = 0x0400
+    UVC_COMPOSITE_CONNECTOR = 0x0401
+    UVC_SVIDEO_CONNECTOR = 0x0402
+    UVC_COMPONENT_CONNECTOR = 0x0403
+
 # struct uvc_input_terminal
+class uvc_input_terminal(Structure):
+    pass
+
+uvc_input_terminal_p = POINTER(uvc_input_terminal)
+uvc_input_terminal._fields_ = [('prev', uvc_input_terminal_p),
+                               ('next', uvc_input_terminal_p),
+                               ('bTerminalId', c_uint8),
+                               ('wTerminalType', c_int),  # enum uvc_it_type
+                               ('wObjectiveFocalLengthMin', c_uint16),
+                               ('wObjectiveFocalLengthMax', c_uint16),
+                               ('wOcularFocalLength', c_uint16),
+                               ('bmControls', c_uint64)]
+
 # struct uvc_output_terminal
+# TODO: This isn't fully implemented by libuvc
+class uvc_output_terminal(Structure):
+    pass
+
+uvc_output_terminal_p = POINTER(uvc_output_terminal)
+uvc_output_terminal._fields_ = [('prev', uvc_output_terminal_p),
+                                ('next', uvc_output_terminal_p)]
+
 # struct uvc_processing_unit
+class uvc_processing_unit(Structure):
+    pass
+
+uvc_processing_unit_p = POINTER(uvc_processing_unit)
+uvc_processing_unit._fields_ = [('prev', uvc_processing_unit_p),
+                                ('next', uvc_processing_unit_p),
+                                ('bUnitId', c_uint8),
+                                ('bSourceId', c_uint8),
+                                ('bmControls', c_uint64)]
 # struct_uvc_extension_unit
+class uvc_extension_unit(Structure):
+    pass
+
+uvc_extension_unit_p = POINTER(uvc_extension_unit)
+uvc_extension_unit._fields_ = [('prev', uvc_extension_unit_p),
+                               ('next', uvc_extension_unit_p),
+                               ('bUnitId', c_uint8)]
+
 # enum uvc_status_class
+class uvc_status_class(Enum):
+    UVC_STATUS_CLASS_CONTROL = 0x10
+    UVC_STATUS_CLASS_CONTROL_CAMERA = 0x11
+    UVC_STATUS_CLASS_CONTROL_PROCESSING = 0x12
+
 # enum uvc_status_attribute
+class uvc_status_attribute(Enum):
+    UVC_STATUS_ATTRIBUTE_VALUE_CHANGE = 0x00
+    UVC_STATUS_ATTRIBUTE_INFO_CHANGE = 0x01
+    UVC_STATUS_ATTRIBUTE_FAILURE_CHANGE = 0x02
+    UVC_STATUS_ATTRIBUTE_UNKNOWN = 0xff
+
 # status callback
+# typedef void(uvc_status_callback_t)(enum uvc_status_class status_class,
+#                                     int event,
+#                                     int selector,
+#                                     enum uvc_status_attribute status_attribute,
+#                                     void *data, size_t data_len,
+#                                     void *user_ptr);
+uvc_status_callback = CFUNCTYPE(None, c_int, c_int, c_int, c_int,
+                                c_void_p, c_size_t, c_void_p)
+
+
 # button callback
+# typedef void(uvc_button_callback_t)(int button,
+#                                     int state,
+#                                     void *user_ptr);
+uvc_button_callback = CFUNCTYPE(None, c_int, c_int, c_void_p)
 
 # struct uvc_device_descriptor
 class uvc_device_descriptor(Structure):
@@ -208,6 +376,8 @@ class uvc_device_descriptor(Structure):
                 ('serialNumber', c_char_p),
                 ('manufacturer', c_char_p),
                 ('product', c_char_p)]
+
+uvc_device_descriptor_p = POINTER(uvc_device_descriptor)
 
 class _timeval(Structure):
     _fields_ = [('tv_sec', c_long),  #this is actually time_t, I assume its a long on linux
@@ -224,7 +394,9 @@ class uvc_frame(Structure):
                 ('capture_time', _timeval),
                 ('source', c_void_p),
                 ('library_owns_data', c_uint8)]
+
 uvc_frame_p = POINTER(uvc_frame)
+
 #  typedef void(uvc_frame_callback_t)(struct uvc_frame *frame, void *user_ptr);
 uvc_frame_callback = CFUNCTYPE(None, POINTER(uvc_frame), c_void_p)
 uvc_null_frame_callback = cast(None, uvc_frame_callback)
@@ -268,6 +440,17 @@ uvc_get_device_list.argtypes = [c_void_p, POINTER(POINTER(c_void_p))]
 uvc_free_device_list = _libuvc.uvc_free_device_list
 uvc_free_device_list.argtypes = [POINTER(c_void_p), c_uint8]
 uvc_free_device_list.restype = None
+
+# uvc_error_t uvc_get_device_descriptor(uvc_device_t *dev,
+#                                       uvc_device_descriptor_t **desc);
+uvc_get_device_descriptor = _libuvc.uvc_get_device_descriptor
+uvc_get_device_descriptor.argtypes = [c_void_p, POINTER(uvc_device_descriptor_p)]
+
+
+#void uvc_free_device_descriptor(uvc_device_descriptor_t *desc);
+uvc_free_device_descriptor = _libuvc.uvc_free_device_descriptor
+uvc_free_device_descriptor.argtypes = [uvc_device_descriptor_p]
+uvc_free_device_descriptor.restype = None
 
 # uint8_t uvc_get_bus_number(uvc_device_t *dev);
 uvc_get_bus_number = _libuvc.uvc_get_bus_number
@@ -484,6 +667,14 @@ uvc_set_power_mode.argtypes = [c_void_p, c_int]
 uvc_strerror = _libuvc.uvc_strerror
 uvc_strerror.argtypes = [c_int]
 uvc_strerror.restype = c_char_p
+
+# void uvc_print_diag(uvc_device_handle_t *devh, FILE *stream);
+# Note: this implementation uses c_void_p as the FILE pointer,
+# because it is only necessary to pass NULL to print to stderr
+uvc_print_diag = _libuvc.uvc_print_diag
+uvc_print_diag.argtypes = [c_void_p, c_void_p]
+uvc_print_diag.restype = c_void_p
+
 
 # TODO: Implement control accessors
 
