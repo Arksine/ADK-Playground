@@ -1,14 +1,7 @@
 #!/usr/bin/env python
 from flask import Flask, render_template, Response
 
-# emulated camera
-# from camera import Camera
-
-# Raspberry Pi camera module (requires picamera package)
-# from camera_pi import Camera
-
 import uvclite
-import signal
 import time
 
 app = Flask(__name__)

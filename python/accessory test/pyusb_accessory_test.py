@@ -37,35 +37,13 @@ import signal
 import threading
 import queue
 import usb
+from constants import *
 
-_B = 'B' if sys.version_info.major == 3 else b'B'
-
-MANUFACTURER = "Arksine"
-MODEL_NAME = "AccesoryTest"
-DESCRIPTION = "Test Accessory comms with android"
-VERSION = "0.1"
-URI = "http://put.github.url.here"
-SERIAL_NUMBER = "1337"
-
-# TODO: need all known compatible android smartphone vendors, so I can attempt
-# to force accessory mode
-COMPATIBLE_VIDS = (0x18D1, 0x0FCE, 0x0E0F, 0x04E8)
-
-ACCESSORY_VID = 0x18D1
-ACCESSORY_PID = (0x2D00, 0x2D01, 0x2D04, 0x2D05)
-NETLINK_KOBJECT_UEVENT = 15
 SHUTDOWN = False
 
-EXIT_APP_CMD = 0xFFFF   # Sends an exit command to the accessory, but this script keeps running
-TERMINATE_CMD = 0xFFFE  # App and this process are terminated
-APP_CONNECTED_CMD = 0xFFFD # application is connected
-
-# TODO: the function below is for testing, remove asap
-def build_large_transfer():
-    """
-    Test for sending a packet larger than the buffer
-    """
-    return bytes((i % 256) for i in range(31525))
+# TODO: The android app now expects a 4 byte header, 2 byte command and 2 byte payload size
+# TODO: import UVCLite, and start/stop streaming back over the accessory connection based
+#       on some form of input. 
 
 def eprint(*args, **kwargs):
     """
@@ -214,7 +192,8 @@ class AndroidAccessory(object):
 
     def read(self, timeout=0):
         """TODO: docstring here """
-        # TODO: read a header as well?
+        # TODO: read a header as well?  This parsing should really be done
+        # in a callable object that can track header, size, etc
         assert self._device and self._endpoint_in
         if self.is_size:
             try:
@@ -228,7 +207,7 @@ class AndroidAccessory(object):
                     # TODO: error callback
                     raise err
             self.is_size = False
-            self.packet_size = unpack('>H', size_bytes)[0]
+            self.packet_size = unpack('>I', size_bytes)[0]
             eprint("Size Recieved: %d" % self.packet_size)
         else:
             try:
@@ -250,6 +229,18 @@ class AndroidAccessory(object):
                isinstance(data, bytes))
         self._write_queue.put(data)
 
+    def write_command(self, command, data):
+        """
+        Writes a command and its accompanying data to the device
+        """
+        #assert(self._endpoint_out and isinstance(command, bytes) and 
+        #       len(command) == 2)
+       
+        size_bytes = pack('>I', len(data))
+        header = command + size_bytes
+        self._write_queue.put(header)
+        self._write_queue.put(data)
+            
     def _write_thread(self):
         while not SHUTDOWN:
             try:
@@ -257,10 +248,8 @@ class AndroidAccessory(object):
             except queue.Empty:
                 continue
             else:
-                size = len(data)
-                size_bytes = pack('>H', size)
                 try:
-                    bytes_wrote = self._endpoint_out.write(size_bytes, timeout=1000)
+                    bytes_wrote = self._endpoint_out.write(data, timeout=2000)
                 except usb.core.USBError as err:
                     if err.errno == 110:  # Operation timed out
                         eprint("Write Timed Out")
@@ -268,8 +257,7 @@ class AndroidAccessory(object):
                     else:
                         raise err
                 else:
-                    assert bytes_wrote == 2
-                assert self._endpoint_out.write(data, timeout=1000) == size
+                    assert bytes_wrote == size
 
     def close(self):
         """TODO: docstring here """
@@ -296,7 +284,6 @@ class AndroidAccessory(object):
         self._read_callback = callback
 
 
-
 def read_callback(accessory, data):
     """
     Temporary Read Callback for testing.  It reads an
@@ -318,15 +305,15 @@ def read_callback(accessory, data):
         elif value == APP_CONNECTED_CMD:
             eprint('Android Application Connected')
             accessory.app_connected = True
-        elif value == 0:
-            eprint('Sending large packet')
-            large_pkt = build_large_transfer()
-            accessory.write(large_pkt)
+        elif value == 100:
+            # TODO: start streaming uvc device
+        elif value == 200:
+            # TODO: stop streaming uvc device
         else:
             eprint('Read in value: %d', value)
             value += 10
             out = pack('>H', value)
-            accessory.write(out)
+            accessory.write_command(TEST, out)
     else:
         # TODO: This function really needs to be a callable class that
         # has its own buffer and can parse
