@@ -31,12 +31,11 @@
         android:layout_marginEnd="20dp"
         android:id="@+id/edt_number" />
 
-    <TextView
+    <SurfaceView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_alignStart="@+id/btn_send"
         android:layout_below="@+id/btn_send"
         android:layout_marginTop="10dp"
-        android:id="@+id/txt_echo"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
+        android:id="@+id/camera_view" />
+
 </RelativeLayout>

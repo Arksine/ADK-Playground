@@ -6,15 +6,24 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Message;
+import android.os.Process;
 import android.os.RemoteException;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -26,11 +35,16 @@ import android.widget.Toast;
 import java.nio.ByteBuffer;
 
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
     private static final String TAG = MainActivity.class.getSimpleName();
 
     private EditText mNumberField;
-    private TextView mEchoTextView;
+    private SurfaceView mCameraView;
+    private SurfaceHolder mCameraHolder;
+    private BitmapFactory.Options mBitOptions;
+    private Bitmap mCameraBitmap;
+    private Rect mCameraWindow;
+    private Handler mCanvasHandler;
     private Handler mUiHandler;
     private boolean mBound = false;
     private AccessoryControlInterface mAccessoryControl;
@@ -77,23 +91,26 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onDataReceived(final byte[] data) throws RemoteException {
+        public void onDataReceived(final InputBuffer data) throws RemoteException {
             mUiHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     // TODO: Temporary for testing only
-                    if (data.length == 2) {
-                        int val = ByteBuffer.wrap(data).getShort() & 0xFFFF;
-                        mEchoTextView.append(String.valueOf(val) + '\n');
+                    if (data.limit() == 2) {
+                        int val = data.getAsByteBuffer().getShort() & 0xFFFF;
+
+                        Toast.makeText(MainActivity.this, "Received Value: " +  val,
+                                Toast.LENGTH_SHORT).show();
+
+                        // Done with the buffer, so clear it and return to queue
+                        data.clear();
                     } else {
-                        mEchoTextView.append("Data Length Recd: " + data.length + '\n');
-                        Thread checkThread = new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                largeDataTest(data);
-                            }
-                        });
-                        checkThread.start();
+                        // Limit (size) is not 2, so during testing I know
+                        // it is a camera frame.  Send it to the canvas
+                        // handler for rendering
+                        Message msg = mCanvasHandler.obtainMessage();
+                        msg.obj = data;
+                        mCanvasHandler.sendMessage(msg);
                     }
                 }
             });
@@ -143,7 +160,41 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         mNumberField = (EditText) findViewById(R.id.edt_number);
-        mEchoTextView = (TextView) findViewById(R.id.txt_echo);
+
+        // Surface, Drawing vars
+        mCameraView = (SurfaceView) findViewById(R.id.camera_view);
+        mCameraHolder = mCameraView.getHolder();
+        mCameraHolder.addCallback(this);
+
+        Bitmap reusable = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
+        mBitOptions = new BitmapFactory.Options();
+        mBitOptions.inBitmap = reusable;
+        mBitOptions.outWidth = 640;
+        mBitOptions.outHeight = 480;
+
+        HandlerThread canvasThread = new HandlerThread("Canvas thread",
+                Process.THREAD_PRIORITY_DISPLAY);
+        canvasThread.start();
+        Handler.Callback canvasCallback = new Handler.Callback() {
+            @Override
+            public boolean handleMessage(Message msg) {
+                InputBuffer buf = (InputBuffer)msg.obj;
+
+                mCameraBitmap = BitmapFactory.decodeByteArray(buf.getBuffer(), 0,
+                        buf.limit(), mBitOptions);
+                Canvas canvas = mCameraHolder.lockCanvas();
+                if (canvas != null) {
+                    canvas.drawBitmap(mCameraBitmap, null, mCameraWindow, null);
+                }
+                mCameraHolder.unlockCanvasAndPost(canvas);
+
+                // we are done with the data buffer, so clear it and return it to the queue
+                buf.clear();
+                return true;
+            }
+        };
+        mCanvasHandler = new Handler(canvasThread.getLooper(), canvasCallback);
+
 
         mUiHandler = new Handler(Looper.getMainLooper());
 
@@ -257,10 +308,39 @@ public class MainActivity extends AppCompatActivity {
         mUiHandler.post(new Runnable() {
             @Override
             public void run() {
-                mEchoTextView.append(msg + '\n');
                 Toast.makeText(MainActivity.this, msg,
                         Toast.LENGTH_SHORT).show();
             }
         });
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int winWidth, int winHeight) {
+        // Update the view window, displays a 4:3 image and fills either width or height,
+        // depending on orientation
+        Log.d("WebCam", "surfaceChanged");
+        int width, height, dw, dh;
+        if(winWidth * 3 / 4 <= winHeight) {
+            dw = 0;
+            dh = (winHeight - winWidth * 3 / 4) / 2;
+            width = dw + winWidth - 1;
+            height = dh + winWidth * 3 / 4 - 1;
+        } else {
+            dw = (winWidth - winHeight * 4 / 3) / 2;
+            dh = 0;
+            width = dw + winHeight * 4 / 3 - 1;
+            height = dh + winHeight - 1;
+        }
+        mCameraWindow = new Rect(dw, dh, width, height);
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        // TODO:
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        // TODO:
     }
 }

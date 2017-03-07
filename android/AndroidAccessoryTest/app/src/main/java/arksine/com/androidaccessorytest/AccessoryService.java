@@ -103,7 +103,7 @@ public class AccessoryService extends Service {
                     int cbCount = mCallbackList.beginBroadcast();
                     for (int i = 0; i < cbCount; i++) {
                         try {
-                            mCallbackList.getBroadcastItem(i).onDataReceived((byte[])msg.obj);
+                            mCallbackList.getBroadcastItem(i).onDataReceived((InputBuffer)msg.obj);
                         } catch (RemoteException e) {
                             e.printStackTrace();
                         }

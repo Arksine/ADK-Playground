@@ -29,10 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 class AccessoryManager implements Runnable {
     private static final String TAG = AccessoryManager.class.getSimpleName();
 
-    private static final int PACKET_HEADER_SIZE = 2;  // TODO: this can change (currently the header only contains a short that indicates packet length)
+    private static final int PACKET_HEADER_SIZE = 6;
     private static final byte[] EXIT_BYTES = {(byte)0xFF, (byte)0xFF};
     private static final byte[] TERMINATE_BYTES = {(byte)0xFF, (byte)0xFE};
     private static final byte[] CONNECTED_BYTES = {(byte)0xFF, (byte)0xFD};
+
+    private BufferManager mBufferManger = new BufferManager();
 
     private static final String MANUFACTURER = "Arksine";
     private static final String MODEL = "AccesoryTest";
@@ -101,8 +103,8 @@ class AccessoryManager implements Runnable {
                 if (mOutputStream != null) {
                     try {
                         // TODO, probably a faster way to get size bytes
-                        short size = (short)data.length;
-                        byte[] size_bytes = ByteBuffer.allocate(2).putShort(size).array();
+
+                        byte[] size_bytes = ByteBuffer.allocate(4).putInt(data.length).array();
                         mOutputStream.write(size_bytes);
                         mOutputStream.write(data);
                         mOutputStream.flush();
@@ -272,69 +274,53 @@ class AccessoryManager implements Runnable {
     @Override
     public void run() {
         mIsReading.set(true);
-        int bytesRead;
-        boolean isHeader = true;
-        int size = PACKET_HEADER_SIZE;  // header is a short (FOR NOW)
-        byte[] buffer = new byte[16384];
-        ByteBuffer packet = ByteBuffer.allocateDirect(32768);
+        AccessoryCommand command;
+        int size ;  // length of packet (max 65535 for now)
+        InputBuffer header = new InputBuffer(PACKET_HEADER_SIZE, null);
 
-        // TODO: there is probably a better way of doing this without all of the copies.
-        // just read the number of bytes you are looking for, then check.  If the number
-        // of bytes received is less than requested, store it in a buffer and get the
-        // remaining bytes.  If the amount received is equal to the amount requested I can
-        // process directly on that buffer. (I can have an arraylist of buffers, not sure how many I need,
-        // say 10.  I keep track of how many are in use, if all of them are in use I have to wait
-        // until one is freed, or I can create a new buffer and append it to the list
+        // Get a ByteBuffer view and set its limit to 4
+        ByteBuffer headerBuf = header.getAsByteBuffer();
+        headerBuf.limit(PACKET_HEADER_SIZE);
 
         outerloop:
         while (mIsReading.get()) {
-            try {
-                bytesRead = mInputStream.read(buffer);
-            } catch (IOException e) {
+
+            // Get Header
+            if (!header.readIntoBuffer(mInputStream, PACKET_HEADER_SIZE)) {
+                Log.d(TAG, "Header read failed");
                 mIsReading.set(false);
-                break;
+                break outerloop;
+            }
+            // Rewind header buffer so I can read from it
+            header.clear();
+            headerBuf.rewind();
+
+
+            command = AccessoryCommand.getCommandFromValue(headerBuf.getShort());
+
+            // Check for an exit command
+            if (command == AccessoryCommand.EXIT) {
+                Log.i(TAG, "Exit recieved");
+                mIsReading.set(false);
+                break outerloop;
             }
 
-            if (bytesRead > 0) {
-                packet.put(buffer,0, bytesRead);
-                if (packet.position() >= size) {
-                    packet.flip();
+            size = headerBuf.getInt();
 
-                    while (packet.remaining() >= size) {
-                        if (isHeader) {
-                            size = packet.getShort() & 0xFFFF;
-                            isHeader = false;
-                            Log.i(TAG, "Header size: " + String.valueOf(size));
-                            // Exit signal received
-                            if (size == 0xFFFF) {
-                                Log.i(TAG, "Exit recieved");
-                                mIsReading.set(false);
-                                break outerloop;
-                            }
-                        } else {
-                            byte[] data = new byte[size];
-                            packet.get(data);
-                            // Send data for processing
-                            Message msg = mEventHandler.obtainMessage(AccessoryEvents.DATA_EVENT,
-                                    data);
-                            mEventHandler.sendMessage(msg);
-
-                            isHeader = true;
-                            size = PACKET_HEADER_SIZE;
-                        }
-                    }
-
-                    if (packet.hasRemaining()) {
-                        // Shift remaining bytes to beginning of packet
-                        byte[] rem = new byte[packet.remaining()];
-                        packet.get(rem);
-                        packet.clear();
-                        packet.put(rem);
-                    } else {
-                        packet.clear();
-                    }
-                }
+            // Get an available buffer and read the payload into it
+            InputBuffer dataBuf = mBufferManger.getBuffer(size);
+            if (!dataBuf.readIntoBuffer(mInputStream, size)) {
+                Log.d(TAG, "Data read failed");
+                mIsReading.set(false);
+                break outerloop;
             }
+
+            // TODO: process command/data in a command handler, for now just send the data to
+            // the test activity
+            Message msg = mEventHandler.obtainMessage(AccessoryEvents.DATA_EVENT,
+                    dataBuf);
+            mEventHandler.sendMessage(msg);
+
         }
 
         if (mAccessoryConnected.get()) {
