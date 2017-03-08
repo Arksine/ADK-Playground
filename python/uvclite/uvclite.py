@@ -6,7 +6,11 @@ TODO: Module docstring
 """
 
 from ctypes import byref, POINTER, c_void_p
+import sys
 import libuvc
+if sys.version[0] == 2:
+    from builtins import range
+
 
 __author__ = 'Eric Callahan'
 

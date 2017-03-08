@@ -47,15 +47,15 @@ __all__ = [
     'uvc_print_diag'
 ]
 
+# TODO: create function for more robust library loading, that should hopefully
+# work on all platforms
+_libuvc = CDLL('libuvc.so')
+
 def buffer_at(address, length):
     """
     Similar to ctypes.string_at, but zero-copy and requires an integer address.
     """
     return bytearray((c_char * length).from_address(address))
-
-# TODO: create function for more robust library loading, that should hopefully
-# work on all platforms
-_libuvc = CDLL('libuvc.so')
 
 # libuvc.h
 
