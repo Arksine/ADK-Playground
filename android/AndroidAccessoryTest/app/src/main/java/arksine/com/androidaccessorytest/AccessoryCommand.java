@@ -75,6 +75,6 @@ public enum AccessoryCommand implements Parcelable {
         }
 
         Log.i(TAG, "No matching Command found for value: " + byteValue);
-        return null;
+        return AccessoryCommand.NONE;
     }
 }

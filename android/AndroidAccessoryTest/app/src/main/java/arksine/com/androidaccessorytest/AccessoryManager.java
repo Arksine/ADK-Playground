@@ -29,12 +29,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 class AccessoryManager implements Runnable {
     private static final String TAG = AccessoryManager.class.getSimpleName();
 
-    private static final int PACKET_HEADER_SIZE = 6;
+    private static final int PACKET_HEADER_SIZE = 6;  // TODO: this can change (currently the header only contains a short that indicates packet length)
     private static final byte[] EXIT_BYTES = {(byte)0xFF, (byte)0xFF};
     private static final byte[] TERMINATE_BYTES = {(byte)0xFF, (byte)0xFE};
     private static final byte[] CONNECTED_BYTES = {(byte)0xFF, (byte)0xFD};
-
-    private BufferManager mBufferManger = new BufferManager();
 
     private static final String MANUFACTURER = "Arksine";
     private static final String MODEL = "AccesoryTest";
@@ -86,12 +84,13 @@ class AccessoryManager implements Runnable {
     private Thread mReadThread;
 
     private Handler mWriteHandler;
-
+    private BufferManager mBufferManager;
 
     AccessoryManager(Context context, Handler eventHandler) {
         this.mContext = context;
         this.mEventHandler = eventHandler;
         this.mUsbManger = (UsbManager) mContext.getSystemService(Context.USB_SERVICE);
+        this.mBufferManager = new BufferManager(10, 32768);
 
         HandlerThread handlerThread = new HandlerThread("Write Handler",
                 Process.THREAD_PRIORITY_DEFAULT);
@@ -103,7 +102,6 @@ class AccessoryManager implements Runnable {
                 if (mOutputStream != null) {
                     try {
                         // TODO, probably a faster way to get size bytes
-
                         byte[] size_bytes = ByteBuffer.allocate(4).putInt(data.length).array();
                         mOutputStream.write(size_bytes);
                         mOutputStream.write(data);
@@ -274,53 +272,77 @@ class AccessoryManager implements Runnable {
     @Override
     public void run() {
         mIsReading.set(true);
+        int bytesRead;
+        int packetIndex = 60;
+        boolean isHeader = true;
         AccessoryCommand command;
-        int size ;  // length of packet (max 65535 for now)
-        InputBuffer header = new InputBuffer(PACKET_HEADER_SIZE, null);
-
-        // Get a ByteBuffer view and set its limit to 4
-        ByteBuffer headerBuf = header.getAsByteBuffer();
-        headerBuf.limit(PACKET_HEADER_SIZE);
+        byte[] inputBuffer = new byte[16384];
+        PacketBuffer packetBuffer = mBufferManager.getBuffer();
 
         outerloop:
         while (mIsReading.get()) {
-
-            // Get Header
-            if (!header.readIntoBuffer(mInputStream, PACKET_HEADER_SIZE)) {
-                Log.d(TAG, "Header read failed");
+            try {
+                bytesRead = mInputStream.read(inputBuffer);
+            } catch (IOException e) {
                 mIsReading.set(false);
-                break outerloop;
-            }
-            // Rewind header buffer so I can read from it
-            header.clear();
-            headerBuf.rewind();
-
-
-            command = AccessoryCommand.getCommandFromValue(headerBuf.getShort());
-
-            // Check for an exit command
-            if (command == AccessoryCommand.EXIT) {
-                Log.i(TAG, "Exit recieved");
-                mIsReading.set(false);
-                break outerloop;
+                break;
             }
 
-            size = headerBuf.getInt();
+            if (bytesRead > 0) {
 
-            // Get an available buffer and read the payload into it
-            InputBuffer dataBuf = mBufferManger.getBuffer(size);
-            if (!dataBuf.readIntoBuffer(mInputStream, size)) {
-                Log.d(TAG, "Data read failed");
-                mIsReading.set(false);
-                break outerloop;
+                packetBuffer.readIntoBuffer(inputBuffer, bytesRead);
+
+                // TODO: I need a while loop here to check the next buffer in case the last
+                // read picked up multiple packets.
+                boolean packetChecked = false;
+                while (!packetChecked) {
+                    packetChecked = true;
+
+                    if (isHeader && packetBuffer.headerRemaining() <= 0) {
+                        ByteBuffer headerBuf = packetBuffer.getHeaderBuffer();
+                        command = AccessoryCommand.getCommandFromValue(headerBuf.getShort());
+                        if (command == AccessoryCommand.EXIT) {
+                            Log.i(TAG, "Exit recieved");
+                            mIsReading.set(false);
+                            break outerloop;
+                        }
+
+                        int size = headerBuf.getInt();
+                        packetBuffer.setPayloadsize(size);
+                        isHeader = false;
+                        packetIndex--;
+                        if (packetIndex == 0) {
+                            Log.i(TAG, "Header Command: " + command.toString());
+                            Log.i(TAG, "Payload size: " + String.valueOf(size));
+                            packetIndex = 60;
+                        }
+
+                    }
+
+                    if (!isHeader && packetBuffer.payloadRemaining() <= 0) {
+
+                        // check for overrun
+                        byte[] overrun = packetBuffer.checkOverrun();
+
+                        // Send data for processing
+                        Message msg = mEventHandler.obtainMessage(AccessoryEvents.DATA_EVENT,
+                                packetBuffer);
+                        mEventHandler.sendMessage(msg);
+
+                        isHeader = true;
+
+                        // get the next buffer in the queue
+                        packetBuffer = mBufferManager.getBuffer();
+                        if (overrun != null) {
+                            packetBuffer.putBytes(overrun);
+                            // We need to inspect the remains of this packet before
+                            // reading again
+                            packetChecked = false;
+                        }
+
+                    }
+                }
             }
-
-            // TODO: process command/data in a command handler, for now just send the data to
-            // the test activity
-            Message msg = mEventHandler.obtainMessage(AccessoryEvents.DATA_EVENT,
-                    dataBuf);
-            mEventHandler.sendMessage(msg);
-
         }
 
         if (mAccessoryConnected.get()) {
@@ -347,4 +369,5 @@ class AccessoryManager implements Runnable {
             mEventHandler.sendMessage(msg);
         }
     }
+
 }

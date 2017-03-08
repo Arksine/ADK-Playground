@@ -12,7 +12,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Icon;
 import android.hardware.usb.UsbAccessory;
-import android.hardware.usb.UsbManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
@@ -103,7 +102,7 @@ public class AccessoryService extends Service {
                     int cbCount = mCallbackList.beginBroadcast();
                     for (int i = 0; i < cbCount; i++) {
                         try {
-                            mCallbackList.getBroadcastItem(i).onDataReceived((InputBuffer)msg.obj);
+                            mCallbackList.getBroadcastItem(i).onDataReceived((PacketBuffer)msg.obj);
                         } catch (RemoteException e) {
                             e.printStackTrace();
                         }

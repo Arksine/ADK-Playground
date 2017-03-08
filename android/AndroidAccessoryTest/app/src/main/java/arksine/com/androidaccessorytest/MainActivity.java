@@ -29,10 +29,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
-
-import java.nio.ByteBuffer;
 
 
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
@@ -91,13 +88,13 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         }
 
         @Override
-        public void onDataReceived(final InputBuffer data) throws RemoteException {
+        public void onDataReceived(final PacketBuffer data) throws RemoteException {
             mUiHandler.post(new Runnable() {
                 @Override
                 public void run() {
                     // TODO: Temporary for testing only
-                    if (data.limit() == 2) {
-                        int val = data.getAsByteBuffer().getShort() & 0xFFFF;
+                    if (data.getPayloadSize() == 2) {
+                        int val = data.getPayloadBuffer().getShort() & 0xFFFF;
 
                         Toast.makeText(MainActivity.this, "Received Value: " +  val,
                                 Toast.LENGTH_SHORT).show();
@@ -178,10 +175,10 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         Handler.Callback canvasCallback = new Handler.Callback() {
             @Override
             public boolean handleMessage(Message msg) {
-                InputBuffer buf = (InputBuffer)msg.obj;
+                PacketBuffer buf = (PacketBuffer)msg.obj;
 
-                mCameraBitmap = BitmapFactory.decodeByteArray(buf.getBuffer(), 0,
-                        buf.limit(), mBitOptions);
+                mCameraBitmap = BitmapFactory.decodeByteArray(buf.getArray(), buf.payloadStartIndex(),
+                        buf.getPayloadSize(), mBitOptions);
                 Canvas canvas = mCameraHolder.lockCanvas();
                 if (canvas != null) {
                     canvas.drawBitmap(mCameraBitmap, null, mCameraWindow, null);

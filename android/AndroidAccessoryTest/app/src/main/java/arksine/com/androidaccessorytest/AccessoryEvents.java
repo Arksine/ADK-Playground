@@ -18,7 +18,7 @@ public abstract class AccessoryEvents implements IInterface {
 
     public abstract void onConnected(final boolean status) throws RemoteException;
     public abstract void onDisconnected() throws RemoteException;
-    public abstract void onDataReceived(final InputBuffer data) throws  RemoteException;
+    public abstract void onDataReceived(final PacketBuffer data) throws  RemoteException;
 
     @Override
     public IBinder asBinder() {
