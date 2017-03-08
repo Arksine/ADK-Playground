@@ -22,7 +22,7 @@
 #
 #      https://github.com/chris-blay/android-open-accessory-bridge
 #
-# Modifications Copyright 2016 Eric Callahan <arksine.code@gmail.com>
+# Modifications Copyright 2016 Eric Callahan <kode4food@yahoo.com>
 # All modifications are subject to the Apache license outlined above.
 
 # pylint: disable=no-member
@@ -34,16 +34,16 @@ from struct import pack, unpack
 import sys
 import time
 import signal
+from multiprocessing import Process, Pipe, Queue
 import threading
 import queue
 import usb
+from uvcprocess import UVCProcess
 from constants import *
 
 SHUTDOWN = False
+uvc_pipe = None
 
-# TODO: The android app now expects a 4 byte header, 2 byte command and 2 byte payload size
-# TODO: import UVCLite, and start/stop streaming back over the accessory connection based
-#       on some form of input. 
 
 def eprint(*args, **kwargs):
     """
@@ -79,7 +79,8 @@ class FindDevice(object):
 
 class AndroidAccessory(object):
     """TODO: docstring here """
-    def __init__(self, vendor_id=None, product_id=None, callback=None):
+    def __init__(self, vendor_id=None, product_id=None, callback=None,
+                 write_queue=None):
         self.app_connected = False
         if callback is None:
             self._read_callback = lambda x, y: eprint('No Read Callback set')
@@ -90,7 +91,12 @@ class AndroidAccessory(object):
         self._product_id = product_id
         self._device = self._configure_and_open_device()
         self._endpoint_out, self._endpoint_in = self._get_endpoints()
-        self._write_queue = queue.Queue()
+        if write_queue:
+            self._write_queue = write_queue
+        else:
+            self._write_queue = Queue()
+
+        self._is_writing = True
         self._writer_thread = threading.Thread(target=self._write_thread)
         self._writer_thread.start()
 
@@ -233,35 +239,38 @@ class AndroidAccessory(object):
         """
         Writes a command and its accompanying data to the device
         """
-        #assert(self._endpoint_out and isinstance(command, bytes) and 
-        #       len(command) == 2)
-       
+
         size_bytes = pack('>I', len(data))
         header = command + size_bytes
-        self._write_queue.put(header)
-        self._write_queue.put(data)
-            
+        self._write_queue.put((header, data))
+
     def _write_thread(self):
-        while not SHUTDOWN:
+        # TODO: I should rename this to _write_process, and I can't use
+        # the shutdown method here.
+        while self._is_writing:
             try:
                 data = self._write_queue.get(timeout=1)
             except queue.Empty:
                 continue
             else:
                 try:
-                    bytes_wrote = self._endpoint_out.write(data, timeout=2000)
+                    self._endpoint_out.write(data[0], timeout=2000) # header
+                    self._endpoint_out.write(data[1], timeout=2000) # data
                 except usb.core.USBError as err:
                     if err.errno == 110:  # Operation timed out
                         eprint("Write Timed Out")
                         continue
                     else:
                         raise err
-                else:
-                    assert bytes_wrote == size
 
     def close(self):
         """TODO: docstring here """
         assert self._device and self._endpoint_out
+        # stop the write thread first so our exit signal isn't
+        # caught up in the middle of another write
+        self._is_writing = False
+        self._writer_thread.join()
+
         self.signal_app_exit()
         usb.util.dispose_resources(self._device)
         self._device = None
@@ -274,6 +283,7 @@ class AndroidAccessory(object):
         Android to cleanly exit.
         """
         if self.app_connected:
+            # TODO: this will be a command and length in the future
             exitstr = pack('>H', 0xFFFF)
             self._endpoint_out.write(exitstr, timeout=1000)
             self.app_connected = False
@@ -283,6 +293,11 @@ class AndroidAccessory(object):
         assert callback
         self._read_callback = callback
 
+def start_uvc_process(write_q):
+    global uvc_pipe
+    uvc_pipe, child_pipe = Pipe()
+    cam_process = UVCProcess(write_q, child_pipe)
+    cam_process.start()
 
 def read_callback(accessory, data):
     """
@@ -306,9 +321,11 @@ def read_callback(accessory, data):
             eprint('Android Application Connected')
             accessory.app_connected = True
         elif value == 100:
-            # TODO: start streaming uvc device
+            #  start streaming uvc device
+            start_uvc_process(accessory._write_queue)
         elif value == 200:
-            # TODO: stop streaming uvc device
+            #  stop streaming uvc device
+            uvc_pipe.send([200])
         else:
             eprint('Read in value: %d', value)
             value += 10
@@ -336,10 +353,11 @@ def main():
     eprint('Accessory test started\n'
            'SIGINT (^C) / SIGTERM to exit\n')
 
+    write_q = Queue(30)
+
     while not SHUTDOWN:
         try:
-            with AndroidAccessory(callback=read_callback) as accessory:
-                # accessory.write('0'.encode('utf-8'))
+            with AndroidAccessory(callback=read_callback, write_queue=write_q) as accessory:
                 while not SHUTDOWN:
                     # read with a 10 second timeout
                     accessory.read(10000)
@@ -347,7 +365,6 @@ def main():
             eprint(val.args)
             eprint('USBError occurred. Restarting…')
             time.sleep(1)
-
 
 if __name__ == '__main__':
     main()
