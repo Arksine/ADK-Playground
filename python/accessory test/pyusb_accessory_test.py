@@ -42,8 +42,6 @@ from uvcprocess import UVCProcess
 from constants import *
 
 SHUTDOWN = False
-uvc_pipe = None
-
 
 def eprint(*args, **kwargs):
     """
@@ -51,20 +49,80 @@ def eprint(*args, **kwargs):
     """
     print(*args, file=sys.stderr, **kwargs)
 
-"""
-class InputParser(object):
+class USBReader(object):
+    __HEADER_SIZE = 6
+    # TODO: add other process pipes that need comms here (or just create the pipes here)
+    def __init__(self, write_q):
+        self._write_queue = write_q
+        self.packet_size = self.__HEADER_SIZE  # initial amount to read
+        self._is_header = True # first packet is header
+        self._command = None
 
-    def __init__(self, acc):
-        self._accessory = acc
-        self._is_size = True
-        self._bytes_to_read = 4
+        self._uvc_pipe = None
+        self._uvc_child_pipe = None
+        self._uvc_process = None
 
-    def __call__(self, data):
-        pass
+    def __call__(self, accessory, data):
+        if self._is_header:
+            #data is the header portion of the packet
+            hdr = unpack('>2sI', data)
+            self._command = hdr[0]
+            self.packet_size = hdr[1]
+            if self.packet_size == 0:
+                self._parse_payload(accessory, None)
+            else:
+                self._is_header = False
+        else:
+            self._parse_payload(accessory, data)
+            self.packet_size = self.__HEADER_SIZE
+            self._is_header = True
 
-    def _parse(self):
-        pass
-"""
+    def _parse_payload(self, accessory, data):
+
+        if self._command == CMD_TERMINATE:
+            eprint('Terminate Command Received')
+            global SHUTDOWN
+            SHUTDOWN = True
+        elif self._command == CMD_EXIT:
+            eprint('Exit app Command Received')
+            accessory.signal_app_exit()
+        elif self._command == CMD_APP_CONNECTED:
+            eprint('Android Application Connected')
+            accessory.app_connected = True
+        elif self._command == CMD_CAM_START:
+            self._start_uvc_process()
+        elif self._command == CMD_CAM_STOP:
+            # stop the uvc process in another thread so this one isn't blocked
+            stop_uvc_thread = threading.Thread(target=self._stop_uvc_process)
+            stop_uvc_thread.start()
+        elif self._command == CMD_TEST:
+            # Test simply takes a short, parses it, and echoes it
+            # back to the device
+            assert len(data) == 2
+            value = unpack('>H', data)[0]
+            eprint('Read in value: %d', value)
+            value += 10
+            out = pack('>H', value)
+            accessory.write_command(CMD_TEST, out)
+
+    def _start_uvc_process(self):
+        if not self._uvc_process:
+            eprint("Starting UVC Process")
+            self._uvc_pipe, self._uvc_child_pipe = Pipe()
+            self._uvc_process = UVCProcess(self._write_queue, self._uvc_child_pipe)
+            self._uvc_process.start()
+
+    def _stop_uvc_process(self):
+        if self._uvc_process:
+            eprint("Stopping UVC Process")
+            self._uvc_pipe.send([200])
+            self._uvc_process.join(1)
+            if self._uvc_process.is_alive():
+                self._uvc_process.terminate()
+            self._uvc_process = None
+
+    def close(self):
+        self._stop_uvc_process()
 
 class FindDevice(object):
     """ TODO: docstring"""
@@ -79,13 +137,10 @@ class FindDevice(object):
 
 class AndroidAccessory(object):
     """TODO: docstring here """
-    def __init__(self, vendor_id=None, product_id=None, callback=None,
+    def __init__(self, callback_obj, vendor_id=None, product_id=None,
                  write_queue=None):
         self.app_connected = False
-        if callback is None:
-            self._read_callback = lambda x, y: eprint('No Read Callback set')
-        else:
-            self._read_callback = callback
+        self._read_callback = callback_obj
 
         self._vendor_id = vendor_id
         self._product_id = product_id
@@ -99,10 +154,6 @@ class AndroidAccessory(object):
         self._is_writing = True
         self._writer_thread = threading.Thread(target=self._write_thread)
         self._writer_thread.start()
-
-        # TODO: temporary vars for testing
-        self.is_size = True
-        self.packet_size = 0
 
     def __enter__(self):
         return self  # All 'enter' work is done in __init__().
@@ -201,32 +252,19 @@ class AndroidAccessory(object):
         # TODO: read a header as well?  This parsing should really be done
         # in a callable object that can track header, size, etc
         assert self._device and self._endpoint_in
-        if self.is_size:
-            try:
-                size_bytes = self._endpoint_in.read(4, timeout=timeout)
-            except usb.core.USBError as err:
-                if err.errno == 110:  # Operation timed out.
-                    # TODO: timeout callback
-                    eprint('Read Timed out')
-                    return
-                else:
-                    # TODO: error callback
-                    raise err
-            self.is_size = False
-            self.packet_size = unpack('>I', size_bytes)[0]
-            eprint("Size Recieved: %d" % self.packet_size)
-        else:
-            try:
-                data_bytes = self._endpoint_in.read(self.packet_size, timeout=timeout)
-            except usb.core.USBError as err:
-                if err.errno == 110:  # Operation timed out.
-                    # TODO: timeout callback
-                    eprint('Read Timed out')
-                    return
-                else:
-                    # TODO: error callback
-                    raise err
-            self.is_size = True
+
+        try:
+            data_bytes = self._endpoint_in.read(self._read_callback.packet_size,
+                                                timeout=timeout)
+        except usb.core.USBError as err:
+            if err.errno == 110:  # Operation timed out.
+                # TODO: timeout callback
+                eprint('Read Timed out')
+                return
+            else:
+                # TODO: error callback
+                raise err
+
             self._read_callback(self, data_bytes)
 
     def write(self, data, timeout=0):
@@ -262,12 +300,18 @@ class AndroidAccessory(object):
                         continue
                     else:
                         raise err
+                else:
+                    # TODO: track total bytes written, if they don't match the
+                    # length of the data sent I have a problem and I need to
+                    # correct it
+                    pass
 
     def close(self):
         """TODO: docstring here """
         assert self._device and self._endpoint_out
         # stop the write thread first so our exit signal isn't
         # caught up in the middle of another write
+        self._read_callback.close()
         self._is_writing = False
         self._writer_thread.join()
 
@@ -293,49 +337,6 @@ class AndroidAccessory(object):
         assert callback
         self._read_callback = callback
 
-def start_uvc_process(write_q):
-    global uvc_pipe
-    uvc_pipe, child_pipe = Pipe()
-    cam_process = UVCProcess(write_q, child_pipe)
-    cam_process.start()
-
-def read_callback(accessory, data):
-    """
-    Temporary Read Callback for testing.  It reads an
-    integer value, adds 10 to it, and returns the value.
-    if 0xFFFF is read, the device is to shutdown.
-    """
-    if not data:
-        return
-
-    if len(data) == 2:
-        value = unpack('>H', data)[0]
-        if value == TERMINATE_CMD:
-            eprint('Terminate Command Received')
-            global SHUTDOWN
-            SHUTDOWN = True
-        elif value == EXIT_APP_CMD:
-            eprint('Exit app Command Received')
-            accessory.signal_app_exit()
-        elif value == APP_CONNECTED_CMD:
-            eprint('Android Application Connected')
-            accessory.app_connected = True
-        elif value == 100:
-            #  start streaming uvc device
-            start_uvc_process(accessory._write_queue)
-        elif value == 200:
-            #  stop streaming uvc device
-            uvc_pipe.send([200])
-        else:
-            eprint('Read in value: %d', value)
-            value += 10
-            out = pack('>H', value)
-            accessory.write_command(TEST, out)
-    else:
-        # TODO: This function really needs to be a callable class that
-        # has its own buffer and can parse
-        pass
-
 def main():
     """TODO: docstring here """
 
@@ -354,10 +355,11 @@ def main():
            'SIGINT (^C) / SIGTERM to exit\n')
 
     write_q = Queue(30)
+    usb_reader = USBReader(write_q)
 
     while not SHUTDOWN:
         try:
-            with AndroidAccessory(callback=read_callback, write_queue=write_q) as accessory:
+            with AndroidAccessory(callback_obj=usb_reader, write_queue=write_q) as accessory:
                 while not SHUTDOWN:
                     # read with a 10 second timeout
                     accessory.read(10000)
