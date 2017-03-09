@@ -29,16 +29,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 class AccessoryManager implements Runnable {
     private static final String TAG = AccessoryManager.class.getSimpleName();
 
-    private static final int PACKET_HEADER_SIZE = 6;  // TODO: this can change (currently the header only contains a short that indicates packet length)
-    private static final byte[] EXIT_BYTES = {(byte)0xFF, (byte)0xFF};
-    private static final byte[] TERMINATE_BYTES = {(byte)0xFF, (byte)0xFE};
-    private static final byte[] CONNECTED_BYTES = {(byte)0xFF, (byte)0xFD};
+    private static final int PACKET_HEADER_SIZE = 6;
 
     private static final String MANUFACTURER = "Arksine";
     private static final String MODEL = "AccesoryTest";
     private static final String ACTION_USB_PERMISSION = "com.arksine.accessorytest.USB_PERMISSION";
-    private static final int READ_MSG = 0;
-    private static final int WRITE_MSG = 1;
 
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
 
@@ -53,6 +48,8 @@ class AccessoryManager implements Runnable {
                             return;
                         }
                     }
+
+                    Log.d(TAG, "Accessory permission not granted.");
                     Message msg = mEventHandler.obtainMessage(AccessoryEvents.CONNECT_EVENT, false);
                     mEventHandler.sendMessage(msg);
                 }
@@ -100,15 +97,27 @@ class AccessoryManager implements Runnable {
             public boolean handleMessage(Message msg) {
                 byte[] data = (byte[])msg.obj;
                 if (mOutputStream != null) {
-                    try {
-                        // TODO, probably a faster way to get size bytes
-                        byte[] size_bytes = ByteBuffer.allocate(4).putInt(data.length).array();
-                        mOutputStream.write(size_bytes);
-                        mOutputStream.write(data);
-                        mOutputStream.flush();
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                    AccessoryCommand cmd = AccessoryCommand.fromOrdinal(msg.arg1);
+                    Log.d(TAG, "Write Command: " + cmd);
+
+                    if (cmd != AccessoryCommand.NONE) {
+                        ByteBuffer headerBuf = ByteBuffer.allocate(PACKET_HEADER_SIZE);
+                        int payloadSize = (data != null) ?  data.length : 0;
+                        headerBuf.put(cmd.getBytes());
+                        headerBuf.putInt(payloadSize);
+
+                        try {
+                            mOutputStream.write(headerBuf.array());
+                            if (data != null) {
+                                mOutputStream.write(data);
+                            }
+
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
                     }
+
+
                 }
                 return true;
             }
@@ -151,6 +160,7 @@ class AccessoryManager implements Runnable {
         if (acc == null) {
             acc = detectAccessory();
             if (acc == null) {
+                Log.d(TAG, "Unable to detect accessory.");
                 Message msg = mEventHandler.obtainMessage(AccessoryEvents.CONNECT_EVENT, false);
                 mEventHandler.sendMessage(msg);
                 return;
@@ -182,9 +192,9 @@ class AccessoryManager implements Runnable {
                     // Send a request to disconnect
                     if (mIsReading.get()) {
                         if (terminateAccessory) {
-                            write(TERMINATE_BYTES);
+                            write(AccessoryCommand.TERMINATE, null);
                         } else {
-                            write(EXIT_BYTES);
+                            write(AccessoryCommand.EXIT, null);
                         }
                     }
 
@@ -221,9 +231,10 @@ class AccessoryManager implements Runnable {
         }
     }
 
-    void write(final byte[] data) {
+    void write(AccessoryCommand command, final byte[] data) {
         Message msg = mWriteHandler.obtainMessage();
         msg.obj = data;
+        msg.arg1 = command.ordinal();
         mWriteHandler.sendMessage(msg);
     }
 
@@ -300,7 +311,7 @@ class AccessoryManager implements Runnable {
 
                     if (isHeader && packetBuffer.headerRemaining() <= 0) {
                         ByteBuffer headerBuf = packetBuffer.getHeaderBuffer();
-                        command = AccessoryCommand.getCommandFromValue(headerBuf.getShort());
+                        command = AccessoryCommand.fromValue(headerBuf.getShort());
                         if (command == AccessoryCommand.EXIT) {
                             Log.i(TAG, "Exit recieved");
                             mIsReading.set(false);
@@ -361,10 +372,11 @@ class AccessoryManager implements Runnable {
             mAccessoryConnected.set(true);
             mReadThread = new Thread(null, this, "Accessory Read Thread");
             mReadThread.start();
-            this.write(CONNECTED_BYTES);   // Tell the accessory we are connected
+            this.write(AccessoryCommand.APP_CONNECTED, null);   // Tell the accessory we are connected
             Message msg = mEventHandler.obtainMessage(AccessoryEvents.CONNECT_EVENT, true);
             mEventHandler.sendMessage(msg);
         } else {
+            Log.d(TAG, "Unable to open Accessory File Descriptor");
             Message msg = mEventHandler.obtainMessage(AccessoryEvents.CONNECT_EVENT, false);
             mEventHandler.sendMessage(msg);
         }

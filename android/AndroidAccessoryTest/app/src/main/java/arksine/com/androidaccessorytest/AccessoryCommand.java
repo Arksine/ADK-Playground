@@ -19,6 +19,10 @@ public enum AccessoryCommand implements Parcelable {
     NONE(new byte[]{(byte)0x00, (byte)0x00}),
     TEST(new byte[]{(byte)0x00, (byte)0x01}),
     CAM_FRAME(new byte[]{(byte)0x00, (byte)0x02}),
+    CAM_START(new byte[]{(byte)0x00, (byte)0x03}),
+    CAM_STOP(new byte[]{(byte)0x00, (byte)0x04}),
+    APP_CONNECTED(new byte[]{(byte)0xFF, (byte)0xFD}),
+    TERMINATE(new byte[]{(byte)0xFF, (byte)0xFE}),
     EXIT(new byte[]{(byte)0xFF, (byte)0xFF});
 
     private static final String TAG = AccessoryCommand.class.getSimpleName();
@@ -59,14 +63,15 @@ public enum AccessoryCommand implements Parcelable {
         return 0;
     }
 
-    /**
-     * Compares an incoming byte value to the integer representation of all the values
-     * in the RadioCommand enum.  If found, the RadioCommand is returned.
-     *
-     * @param byteValue     The integer representation of the value to find
-     * @return              The matching command if found, null if not found
-     */
-    public static AccessoryCommand getCommandFromValue(int byteValue) {
+    public static AccessoryCommand fromOrdinal(int ordinal) {
+        if (ordinal >= 0 && ordinal < COMMAND_ARRAY.length) {
+            return COMMAND_ARRAY[ordinal];
+        } else {
+            return AccessoryCommand.NONE;
+        }
+    }
+
+    public static AccessoryCommand fromValue(int byteValue) {
 
         for (AccessoryCommand cmd : COMMAND_ARRAY) {
             if (cmd.getValue() == byteValue) {

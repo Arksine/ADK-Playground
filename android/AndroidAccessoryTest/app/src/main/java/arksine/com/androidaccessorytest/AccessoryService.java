@@ -224,7 +224,7 @@ public class AccessoryService extends Service {
         @Override
         public boolean writeBytes(byte[] data) {
             if (this.isOpen()) {
-                mAccessoryManager.write(data);
+                mAccessoryManager.write(AccessoryCommand.TEST, data);
                 return true;
             } else {
                 return false;
@@ -235,7 +235,7 @@ public class AccessoryService extends Service {
         public boolean writeShort(short data) {
             if (this.isOpen()) {
                 byte[] bytes = ByteBuffer.allocate(2).putShort(data).array();
-                mAccessoryManager.write(bytes);
+                mAccessoryManager.write(AccessoryCommand.TEST, bytes);
                 return true;
             } else {
                 return false;
@@ -246,7 +246,7 @@ public class AccessoryService extends Service {
         public boolean writeInt(int data) {
             if (this.isOpen()) {
                 byte[] bytes = ByteBuffer.allocate(4).putInt(data).array();
-                mAccessoryManager.write(bytes);
+                mAccessoryManager.write(AccessoryCommand.TEST, bytes);
                 return true;
             } else {
                 return false;
@@ -256,7 +256,7 @@ public class AccessoryService extends Service {
         @Override
         public boolean writeString(String data) {
             if (this.isOpen()) {
-                mAccessoryManager.write(data.getBytes());
+                mAccessoryManager.write(AccessoryCommand.TEST, data.getBytes());
                 return true;
             } else {
                 return false;
