@@ -210,6 +210,16 @@ public class AccessoryService extends Service {
 
     private final AccessoryControlInterface mControlInterface = new AccessoryControlInterface() {
         @Override
+        public boolean sendCommand(AccessoryCommand cmd, byte[] data) {
+            if(this.isOpen()) {
+                mAccessoryManager.write(cmd, data);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
         public void attemptConnect(UsbAccessory accessory) {
             if (!isOpen()) {
                 mAccessoryManager.open(accessory);

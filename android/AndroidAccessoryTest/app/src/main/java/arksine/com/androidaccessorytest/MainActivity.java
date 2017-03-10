@@ -44,6 +44,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     private Handler mCanvasHandler;
     private Handler mUiHandler;
     private boolean mBound = false;
+    private boolean mCameraOn = false;
     private AccessoryControlInterface mAccessoryControl;
 
 
@@ -232,6 +233,19 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
                 mNumberField.setText("");
 
+            }
+        });
+
+        Button camBtn = (Button) findViewById(R.id.btn_camera);
+        camBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (mCameraOn) {
+                    mAccessoryControl.sendCommand(AccessoryCommand.CAM_STOP, null);
+                } else {
+                    mAccessoryControl.sendCommand(AccessoryCommand.CAM_START, null);
+                }
+                mCameraOn = !mCameraOn;
             }
         });
 

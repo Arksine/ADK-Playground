@@ -15,7 +15,8 @@ class UVCProcess(Process):
         self._cap_dev = None
 
     def _read_callback(self, frame, user):
-        size_bytes = pack('>I', len(frame.data))
+        size = len(frame.data)
+        size_bytes = pack('>I', size)
         header = CMD_CAM_FRAME + size_bytes
         try:
             self._write_queue.put((header, frame.data), block=False)
@@ -43,3 +44,4 @@ class UVCProcess(Process):
                     break
             self._cap_dev.stop_streaming()
             self._cap_dev.close()
+            self._comm_pipe.close()

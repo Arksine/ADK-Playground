@@ -68,8 +68,12 @@ class USBReader(object):
             hdr = unpack('>2sI', data)
             self._command = hdr[0]
             self.packet_size = hdr[1]
+            print("Command:")
+            print(self._command)
+            print("Payload Size: %d" % self.packet_size)
             if self.packet_size == 0:
                 self._parse_payload(accessory, None)
+                self.packet_size = self.__HEADER_SIZE
             else:
                 self._is_header = False
         else:
@@ -180,10 +184,14 @@ class AndroidAccessory(object):
     def _configure_and_open_device(self):
         device, is_acc_mode = self._detect_device()
         if is_acc_mode:
-            self._product_id = device.idProduct
-            self._vendor_id = device.idVendor
-            return device
-        else:
+            # Reset device and attempt to redetect, we do not want
+            # device in accessory mode on first run
+            device.reset()
+            time.sleep(2)
+            device, is_acc_mode = self._detect_device()
+
+        # Configure device for android accessory
+        if not is_acc_mode:
             # Validate version code.
             buf = device.ctrl_transfer(
                 usb.util.CTRL_TYPE_VENDOR | usb.util.CTRL_IN,
@@ -194,17 +202,17 @@ class AndroidAccessory(object):
             eprint('Adk version is %d' % adk_version)
             assert adk_version == 2
 
-            # Enable 2 channel Audio
-            assert(device.ctrl_transfer(
-                usb.util.CTRL_TYPE_VENDOR | usb.util.CTRL_OUT,
-                58, 1, 0, None) == 0)
-
             # Send accessory information.
             for i, data in enumerate(
                     (MANUFACTURER, MODEL_NAME, DESCRIPTION, VERSION, URI, SERIAL_NUMBER)):
                 assert(device.ctrl_transfer(
                     usb.util.CTRL_TYPE_VENDOR | usb.util.CTRL_OUT,
                     52, 0, i, data) == len(data))
+
+            # Enable 2 channel Audio
+            assert(device.ctrl_transfer(
+                usb.util.CTRL_TYPE_VENDOR | usb.util.CTRL_OUT,
+                58, 1, 0, None) == 0)
 
             # Put device into accessory mode.
             assert(device.ctrl_transfer(
@@ -265,7 +273,7 @@ class AndroidAccessory(object):
                 # TODO: error callback
                 raise err
 
-            self._read_callback(self, data_bytes)
+        self._read_callback(self, data_bytes)
 
     def write(self, data, timeout=0):
         """TODO: docstring here """
@@ -277,8 +285,8 @@ class AndroidAccessory(object):
         """
         Writes a command and its accompanying data to the device
         """
-
-        size_bytes = pack('>I', len(data))
+        size = len(data)
+        size_bytes = pack('>I', size)
         header = command + size_bytes
         self._write_queue.put((header, data))
 
@@ -292,8 +300,8 @@ class AndroidAccessory(object):
                 continue
             else:
                 try:
-                    self._endpoint_out.write(data[0], timeout=2000) # header
-                    self._endpoint_out.write(data[1], timeout=2000) # data
+                    bytes_written = self._endpoint_out.write(data[0], timeout=2000) # header
+                    bytes_written += self._endpoint_out.write(data[1], timeout=2000) # data
                 except usb.core.USBError as err:
                     if err.errno == 110:  # Operation timed out
                         eprint("Write Timed Out")
@@ -301,25 +309,24 @@ class AndroidAccessory(object):
                     else:
                         raise err
                 else:
-                    # TODO: track total bytes written, if they don't match the
-                    # length of the data sent I have a problem and I need to
-                    # correct it
-                    pass
+                    # bytes written = total data bytes + header bytes (6)
+                    if bytes_written != (len(data[0]) + len(data[1])):
+                        raise usb.core.USBError("Bytes Written does not match data size")
+
 
     def close(self):
         """TODO: docstring here """
-        assert self._device and self._endpoint_out
-        # stop the write thread first so our exit signal isn't
-        # caught up in the middle of another write
-        self._read_callback.close()
-        self._is_writing = False
-        self._writer_thread.join()
-
-        self.signal_app_exit()
-        usb.util.dispose_resources(self._device)
-        self._device = None
-        self._endpoint_out = None
-        self._endpoint_in = None
+        if self._device:
+            # stop the write thread first so our exit signal isn't
+            # caught up in the middle of another write
+            self._read_callback.close()
+            self._is_writing = False
+            self._writer_thread.join()
+            self._device.reset()
+            usb.util.dispose_resources(self._device)
+            self._device = None
+            self._endpoint_out = None
+            self._endpoint_in = None
 
     def signal_app_exit(self):
         """
@@ -328,8 +335,7 @@ class AndroidAccessory(object):
         """
         if self.app_connected:
             # TODO: this will be a command and length in the future
-            exitstr = pack('>H', 0xFFFF)
-            self._endpoint_out.write(exitstr, timeout=1000)
+            self._endpoint_out.write(CMD_EXIT, timeout=1000)
             self.app_connected = False
 
     def set_callback(self, callback):

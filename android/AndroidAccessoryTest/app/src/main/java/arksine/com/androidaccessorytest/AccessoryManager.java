@@ -303,8 +303,8 @@ class AccessoryManager implements Runnable {
 
                 packetBuffer.readIntoBuffer(inputBuffer, bytesRead);
 
-                // TODO: I need a while loop here to check the next buffer in case the last
-                // read picked up multiple packets.
+                // TODO: I should have a confirmation packet as well.  It can't be a checksum
+                // because packets are too large.
                 boolean packetChecked = false;
                 while (!packetChecked) {
                     packetChecked = true;
