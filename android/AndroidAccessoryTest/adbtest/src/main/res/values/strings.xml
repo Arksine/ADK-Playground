@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Adb Test</string>
+    <string name="service_name">Adb Comm Test</string>
+
+    <string name="NOTIFICATION_CONNECTED">Adb Connected</string>
+    <string name="NOTIFICATION_NOT_CONNECTED">Adb Not Connected</string>
+
+    <string name="ACTION_STOP_SERVICE">com.arksine.adbtest.STOP_SERVICE</string>
+</resources>
