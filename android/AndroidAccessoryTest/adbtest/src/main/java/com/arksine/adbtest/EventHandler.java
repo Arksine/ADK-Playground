@@ -58,6 +58,7 @@ public class EventHandler extends Handler {
                     }
                 }
 
+                mServiceCallbacks.stopService();
                 break;
             }
             case MageEvents.TEST_EVENT: {

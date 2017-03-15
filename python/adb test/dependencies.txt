@@ -1,0 +1,9 @@
+flask
+python-socketio
+gevent
+gevent-websocket
+uvclite
+
+# for kombu ipc
+kombu
+librabbitmq

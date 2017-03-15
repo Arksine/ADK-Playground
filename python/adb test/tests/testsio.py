@@ -6,7 +6,7 @@ import eventlet
 from eventlet import green
 from flask import Flask, render_template
 
-sio = socketio.Server(async_mode='eventlet')
+sio = socketio.Server(async_mode='eventlet', logger=True)
 app = Flask(__name__)
 comm_pipes = None
 client_mgr = None
@@ -17,7 +17,6 @@ class ClientManager(object):
         self._sio = sio_in
         # TODO: add pipes for other processes
         self._uvc_pipe = pipes[0]
-        self._uvc_thread = None
         self._is_running = False
 
     def send_uvc_command(self, command):
@@ -25,17 +24,15 @@ class ClientManager(object):
 
     def start_listeners(self):
         self._is_running = True
-        self._uvc_thread = eventlet.spawn_n(self._uvc_listener)
+        eventlet.spawn_n(self._uvc_listener)
 
     def _write_to_pipe(self, pipe, command):
         r, w, x = green.select.select([], [pipe.fileno()], [])
         if w:
-            print('Write cmd: %s' % command)
             pipe.send(command)
 
     def _uvc_listener(self):
         while self._is_running:
-            # TODO: instead of killing thread I could put a timeout in select
             r, w, x = green.select.select([self._uvc_pipe.fileno()], [], [])
             if r:
                 frame = self._uvc_pipe.recv()
@@ -43,12 +40,6 @@ class ClientManager(object):
 
     def close(self):
         self._is_running = False
-        if self._uvc_thread:
-            try:
-                eventlet.kill(self._uvc_thread)
-            except eventlet.greenlet.GreenletExit:
-                pass
-            self._uvc_thread = None
 
 
 @app.route('/')
@@ -57,15 +48,13 @@ def index():
 
 @sio.on('connect')
 def connect(sid, environ):
-    print("Connected:")
+    print("Connected")
     global client_mgr
     if not client_mgr:
         client_mgr = ClientManager(sid, sio, comm_pipes)
-        client_mgr.start_listeners()
 
 @sio.on('disconnect')
 def disconnect(sid):
-    print("Disconnected")
     global client_mgr
     if client_mgr:
         client_mgr.close()
@@ -88,6 +77,7 @@ def handle_start_camera(sid, data):
 def handle_stop_camera(sid, data):
     if client_mgr:
         client_mgr.send_uvc_command('STOP')
+    pass
 
 def start_server(pipes):
     # TODO: check pipes to make sure they are not None, and make sure they
@@ -99,13 +89,12 @@ def start_server(pipes):
     comm_pipes = pipes
     app = socketio.Middleware(sio, app)
     eventlet.wsgi.server(eventlet.listen(('', 8000)), app,
-                         max_size=10)
+                         max_size=1)
 
 if __name__ == '__main__':
     import greenpipe
     pone, ptwo = greenpipe.Pipe()
     comm_pipes = (ptwo,)
     app = socketio.Middleware(sio, app)
-    eventlet.wsgi.server(eventlet.listen(('', 8000)), app,
-                         max_size=10)
+    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
 

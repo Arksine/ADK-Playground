@@ -35,8 +35,15 @@ public class MainService extends Service {
             String action = intent.getAction();
             if (action.equals(getString(R.string.ACTION_STOP_SERVICE)) ||
                     action.equals(Intent.ACTION_SHUTDOWN)) {
-                mSioManager.disconnect();
-                stopSelf();
+                if (mSioManager.isConnected()) {
+                    mSioManager.disconnect();
+                } else {
+                    // We still need to disconnect to stop the socket from attempting
+                    // reconnections, but we need to fire the event to bound activities
+                    // manually
+                    mSioManager.disconnect();
+                    mEventHandler.sendEmptyMessage(MageEvents.DISCONNECT_EVENT);
+                }
             }
         }
     };
@@ -54,6 +61,7 @@ public class MainService extends Service {
         eventHandlerThread.start();
         mEventHandler = new EventHandler(eventHandlerThread.getLooper(), mMageEvents,
                 mEventHandlerCbs);
+
         mSioManager = new SioManager(mEventHandler);
 
         Bitmap largeIcon = getLargeNotificationIcon();

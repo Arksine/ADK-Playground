@@ -6,28 +6,30 @@ import android.os.Message;
 import android.util.Log;
 
 import java.net.URISyntaxException;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
+import io.socket.engineio.client.EngineIOException;
 
 /**
  * Created by Eric on 3/11/2017.
  */
 
 public class SioManager {
-    // TODO: need callback handler passed to constructor
-
     private static final String TAG = SioManager.class.getSimpleName();
+    private static boolean DEBUG = false;
     private static final String EVENT_UPGRADE = "upgrade";
     private static final String EVENT_UPGRADE_ERROR = "upgradeError";
-    private static final String DEFAULT_URI = "http://127.0.0.1";
+    private static final String DEFAULT_URI = "http://127.0.0.1:8000";
     private static final String[] TRANSPORTS = {"websocket"};
 
     private Socket mIoSocket;
     private EventHandler mEventHandler;
     private AtomicBoolean mConnected = new AtomicBoolean(false);
+    private AtomicBoolean mAttemptingConnect = new AtomicBoolean(false);
 
     public SioManager (EventHandler eventHandler){
         // TODO: the DEFAULT_URI needs to be an option.  Default is localhost (connection over ADB)
@@ -36,7 +38,7 @@ public class SioManager {
         IO.Options options = new IO.Options();
         options.transports = TRANSPORTS;
         options.upgrade = true;
-        options.port = 8000;
+        options.secure = false;
 
         try {
             mIoSocket = IO.socket(DEFAULT_URI, options);
@@ -45,24 +47,34 @@ public class SioManager {
         }
 
         // TODO: add more listeners
-        mIoSocket.on(Socket.EVENT_CONNECT, onConnect)
-                .on(Socket.EVENT_DISCONNECT, onDisconnect)
-                .on(Socket.EVENT_CONNECT_ERROR, onError)
-                .on(EVENT_UPGRADE, onTransportUpgrade)
-                .on(EVENT_UPGRADE_ERROR, onUpgradeError)
-                .on("TEST", onTest)
-                .on("CAM_FRAME", onFrameReceived);
+        mIoSocket.on(Socket.EVENT_CONNECT, onConnect);
+        mIoSocket.on(Socket.EVENT_DISCONNECT, onDisconnect);
+        mIoSocket.on(Socket.EVENT_CONNECT_ERROR, onError);
+        mIoSocket.on(EVENT_UPGRADE, onTransportUpgrade);
+        mIoSocket.on(EVENT_UPGRADE_ERROR, onUpgradeError);
+        mIoSocket.on("TEST", onTest);
+        mIoSocket.on("CAM_FRAME", onFrameReceived);
 
     }
 
+    /**
+     * Connect to socketio.  Only connect if not connected and not attempting
+     * connection
+     */
     public void connect() {
-        if (!mConnected.get()) {
+        if (!mConnected.get() && mAttemptingConnect.compareAndSet(false, true)) {
             mIoSocket.connect();
         }
     }
 
+    /**
+     * Disconnect socketio.  We disconnects from connected server, OR stops attempting
+     * connections if the client is in the process of repeatedly attempting to connect
+     */
     public void disconnect() {
-        if (mConnected.compareAndSet(true, false)) {
+        if (mConnected.compareAndSet(true, false) ||
+                mAttemptingConnect.compareAndSet(true, false)) {
+            mConnected.set(false);
             mIoSocket.disconnect();
         }
     }
@@ -77,12 +89,16 @@ public class SioManager {
         }
     }
 
+    // TODO; I need a listener for reconnect attempts, so I can set attempting reconnect
+    // Appropriately
+
 
     private final Emitter.Listener onConnect = new Emitter.Listener() {
         @Override
         public void call(Object... objects) {
-            Log.i(TAG, "Socket IO connected");
+            Log.i(TAG, "Socket IO connected:");
             mConnected.set(true);
+            mAttemptingConnect.set(false);
             Message msg = mEventHandler.obtainMessage(MageEvents.CONNECT_EVENT, true);
             mEventHandler.sendMessage(msg);
         }
@@ -121,7 +137,16 @@ public class SioManager {
     private final Emitter.Listener onError = new Emitter.Listener() {
         @Override
         public void call(Object... objects) {
-            Log.i(TAG, "Socket IO connection error");
+            Log.i(TAG, "Socket IO connection error:");
+            if (DEBUG) {
+                for (Object obj : objects) {
+                    if (obj instanceof EngineIOException) {
+                        ((EngineIOException) obj).printStackTrace();
+                    } else {
+                        Log.i(TAG, obj.toString());
+                    }
+                }
+            }
             Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
                     "Connection Error");
             mEventHandler.sendMessage(msg);
