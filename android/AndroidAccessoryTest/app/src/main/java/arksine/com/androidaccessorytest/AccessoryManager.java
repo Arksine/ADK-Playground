@@ -83,7 +83,6 @@ class AccessoryManager implements Runnable {
     private Handler mWriteHandler;
     private BufferManager mBufferManager;
 
-    private AccessoryIpBridge mIpBridge;
 
     AccessoryManager(Context context, Handler eventHandler) {
         this.mContext = context;

@@ -1,9 +1,18 @@
 <resources>
     <string name="app_name">Adb Test</string>
+    <string name="action_settings">Settings</string>
     <string name="service_name">Adb Comm Test</string>
 
     <string name="NOTIFICATION_CONNECTED">Adb Connected</string>
     <string name="NOTIFICATION_NOT_CONNECTED">Adb Not Connected</string>
 
     <string name="ACTION_STOP_SERVICE">com.arksine.adbtest.STOP_SERVICE</string>
+
+    <string name="pref_toggle_service">Toggle Service</string>
+    <string name="pref_autostart">Auto Start Service</string>
+    <string name="pref_autostart_summary">Automatically start service when app is launched</string>
+    <string name="pref_use_wifi">Use Wifi Mode</string>
+    <string name="pref_use_wifi_summary">Communicate over Wifi instead of USB</string>
+    <string name="pref_sio_addr">Socket IO Host Address</string>
+    <string name="pref_sio_addr_default">http://127.0.0.1:8000</string>
 </resources>

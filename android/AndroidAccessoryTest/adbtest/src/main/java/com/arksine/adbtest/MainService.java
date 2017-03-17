@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Icon;
@@ -16,16 +17,21 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.Message;
+import android.preference.PreferenceManager;
 import android.support.annotation.IntDef;
+import android.util.Log;
 
 public class MainService extends Service {
-    public static final String TAG = MainService.class.getSimpleName();
+    private static final String TAG = MainService.class.getSimpleName();
+    private static final String DEFAULT_URI = "127.0.0.1:8000";
 
     private final IBinder mBinder = new LocalBinder();
     private NotificationManager mNotificationManager;
     private Notification.Builder mNotificationBuilder;
 
-    private SioManager mSioManager;
+    private SioManager mSioManager = null;
+    private AccessoryManager mAccessoryManager = null;
     private final EventManager<MageEvents> mMageEvents = new EventManager<>();
     private EventHandler mEventHandler;
 
@@ -61,8 +67,6 @@ public class MainService extends Service {
         eventHandlerThread.start();
         mEventHandler = new EventHandler(eventHandlerThread.getLooper(), mMageEvents,
                 mEventHandlerCbs);
-
-        mSioManager = new SioManager(mEventHandler);
 
         Bitmap largeIcon = getLargeNotificationIcon();
         Intent stopIntent = new Intent(getString(R.string.ACTION_STOP_SERVICE));
@@ -110,13 +114,16 @@ public class MainService extends Service {
         }
         unregisterReceiver(mStopReceiver);
 
-        // TODO: do I need some variation of "kill" used on RemoteCallbackList for the EventManager?
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         // TODO: can I check for adb and/or wifi connection first?
-        mSioManager.connect();
+        // TODO: Check preferences, determine if Accessory mode should be used.  If so,
+        // attempt to set up the accessory and forward the port before setting up the
+        // SioManager.  IF I can't forward the port though simple Sockets, I'll attempt to
+        // set up a VPNService and connect the a Linux TUN/TAP on the other end
+
         startForeground(R.integer.ONGOING_NOTIFICATION_ID, mNotificationBuilder.build());
         return START_STICKY;
     }
@@ -126,6 +133,26 @@ public class MainService extends Service {
         // TODO: check connection and attempt to connect?
         return mBinder;
     }
+
+    private void setupConnection() {
+        SharedPreferences globalPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (mSioManager != null) {
+            mSioManager.disconnect();
+        }
+
+        boolean useWifi = globalPrefs.getBoolean("pref_key_use_wifi", true);
+        if (useWifi) {
+            String uri = globalPrefs.getString("pref_key_socketio_addr", DEFAULT_URI);
+            mSioManager = new SioManager(uri, mEventHandler);
+            mSioManager.connect();
+        } else {
+            mSioManager = new SioManager(DEFAULT_URI, mEventHandler);
+            mAccessoryManager = new AccessoryManager(this, mAccessoryCallbacks);
+            mAccessoryManager.open();
+        }
+
+    }
+
 
     private final EventHandler.ServiceCallbacks mEventHandlerCbs = new EventHandler.ServiceCallbacks() {
         @Override
@@ -145,6 +172,39 @@ public class MainService extends Service {
         }
     };
 
+    private final AccessoryManager.Callbacks mAccessoryCallbacks = new AccessoryManager.Callbacks() {
+        @Override
+        public void onAccessoryConnected(boolean connected) {
+            if (connected) {
+                if (mSioManager != null) {
+                    mSioManager.connect();
+                }
+            } else {
+                Log.i(TAG, "Error Connecting to Accessory");
+                Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
+                        "Error Connecting to Accessory");
+                mEventHandler.sendMessage(msg);
+            }
+        }
+
+        @Override
+        public void onSocketConnected(boolean connected) {
+            Log.i(TAG, "Accessory/Socket Connected");
+        }
+
+        @Override
+        public void onError(String error) {
+            Log.e(TAG, error);
+            Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT, error);
+            mEventHandler.sendMessage(msg);
+        }
+
+        @Override
+        public void onClose() {
+            // TODO: Accessory Closed
+        }
+    };
+
     // TODO:  implement the interface below
     private final MageControlInterface mControlInterface = new MageControlInterface() {
         @Override
@@ -160,6 +220,11 @@ public class MainService extends Service {
         @Override
         public void disconnect() {
             mSioManager.disconnect();
+        }
+
+        @Override
+        public void refreshConnection() {
+            setupConnection();
         }
     };
 

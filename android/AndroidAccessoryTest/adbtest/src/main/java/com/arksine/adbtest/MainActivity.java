@@ -16,10 +16,16 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
 import android.os.RemoteException;
+import android.preference.PreferenceFragment;
+import android.preference.PreferenceManager;
+import android.support.annotation.Nullable;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -100,7 +106,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             mUiHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    Snackbar.make(findViewById(R.id.main_layout), logInfo,
+                    Snackbar.make(findViewById(R.id.content_main), logInfo,
                             Snackbar.LENGTH_SHORT).show();
                 }
             });
@@ -146,6 +152,8 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
 
         mTestField = (EditText) findViewById(R.id.edt_test);
 
@@ -220,17 +228,26 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             }
         });
 
-        if (!isServiceRunning(MainService.class, this)) {
+        boolean autostart = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean("pref_key_autostart_service", false);
+
+        if (autostart && !isServiceRunning(MainService.class, this)) {
             Intent startIntent = new Intent(this, MainService.class);
             this.startService(startIntent);
+        }
+    }
+
+    private void bindService() {
+        if (!mBound && isServiceRunning(MainService.class, this)) {
+            Intent bindIntent = new Intent(this, MainService.class);
+            bindService(bindIntent, mServiceConnection, Context.BIND_ABOVE_CLIENT);
         }
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        Intent bindIntent = new Intent(this, MainService.class);
-        bindService(bindIntent, mServiceConnection, Context.BIND_ABOVE_CLIENT);
+        bindService();
     }
 
     @Override
@@ -241,6 +258,30 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             unbindService(mServiceConnection);
             mBound = false;
         }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            Intent settingsIntent = new Intent(this, SettingsActivity.class);
+            startActivity(settingsIntent);
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -282,4 +323,5 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         }
         return false;
     }
+
 }

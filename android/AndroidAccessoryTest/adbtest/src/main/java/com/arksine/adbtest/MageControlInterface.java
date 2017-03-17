@@ -10,4 +10,5 @@ public interface MageControlInterface {
     boolean isConnected();
     void sendTestCommand(MageCommand cmd, String data);
     void disconnect();
+    void refreshConnection();
 }

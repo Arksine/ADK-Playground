@@ -23,7 +23,6 @@ public class SioManager {
     private static boolean DEBUG = false;
     private static final String EVENT_UPGRADE = "upgrade";
     private static final String EVENT_UPGRADE_ERROR = "upgradeError";
-    private static final String DEFAULT_URI = "http://127.0.0.1:8000";
     private static final String[] TRANSPORTS = {"websocket"};
 
     private Socket mIoSocket;
@@ -31,7 +30,7 @@ public class SioManager {
     private AtomicBoolean mConnected = new AtomicBoolean(false);
     private AtomicBoolean mAttemptingConnect = new AtomicBoolean(false);
 
-    public SioManager (EventHandler eventHandler){
+    public SioManager (String uri, EventHandler eventHandler){
         // TODO: the DEFAULT_URI needs to be an option.  Default is localhost (connection over ADB)
         this.mEventHandler = eventHandler;
 
@@ -41,7 +40,7 @@ public class SioManager {
         options.secure = false;
 
         try {
-            mIoSocket = IO.socket(DEFAULT_URI, options);
+            mIoSocket = IO.socket(uri, options);
         } catch (URISyntaxException e) {
             throw new RuntimeException(e);
         }
@@ -74,7 +73,6 @@ public class SioManager {
     public void disconnect() {
         if (mConnected.compareAndSet(true, false) ||
                 mAttemptingConnect.compareAndSet(true, false)) {
-            mConnected.set(false);
             mIoSocket.disconnect();
         }
     }

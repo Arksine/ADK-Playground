@@ -25,6 +25,7 @@ class UVCProcess(Process):
 
     def _signal_handler(self, sig, stack):
         self._process_running = False
+        raise EOFError
 
     def run(self):
         for signum in (signal.SIGTERM, signal.SIGINT):
@@ -37,8 +38,12 @@ class UVCProcess(Process):
             self._cap_dev.start_streaming()
             print("UVC Ready to Capture")
             while self._process_running:
-                command = self._comm_pipe.recv()
-                if command[0] == 200:
+                try:
+                    command = self._comm_pipe.recv()
+                except EOFError:
+                    print("Closing capture device")
+                    break
+                if command == 'STOP':
                     print("Close Capture device")
                     self._process_running = False
                     break
