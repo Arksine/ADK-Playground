@@ -28,6 +28,12 @@
                 android:resource="@xml/accessory_filter" />
         </activity>
 
+        <activity
+            android:name=".SettingsActivity"
+            android:label="Settings"
+            android:theme="@style/AppTheme">
+        </activity>
+
         <service
             android:name=".MainService"
             android:enabled="true"

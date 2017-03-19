@@ -229,7 +229,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         });
 
         boolean autostart = PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("pref_key_autostart_service", false);
+                .getBoolean("pref_key_autostart_service", true);
 
         if (autostart && !isServiceRunning(MainService.class, this)) {
             Intent startIntent = new Intent(this, MainService.class);

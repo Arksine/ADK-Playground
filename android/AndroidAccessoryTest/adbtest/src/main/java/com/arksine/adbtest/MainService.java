@@ -14,24 +14,22 @@ import android.graphics.BitmapFactory;
 import android.graphics.drawable.Icon;
 import android.os.Binder;
 import android.os.Build;
-import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Message;
 import android.preference.PreferenceManager;
-import android.support.annotation.IntDef;
 import android.util.Log;
 
 public class MainService extends Service {
     private static final String TAG = MainService.class.getSimpleName();
-    private static final String DEFAULT_URI = "127.0.0.1:8000";
+    private static final String DEFAULT_URI = "http://127.0.0.1:8000";
 
     private final IBinder mBinder = new LocalBinder();
     private NotificationManager mNotificationManager;
     private Notification.Builder mNotificationBuilder;
 
     private SioManager mSioManager = null;
-    private AccessoryManager mAccessoryManager = null;
+    private AccessoryBridge mAccessoryBridge = null;
     private final EventManager<MageEvents> mMageEvents = new EventManager<>();
     private EventHandler mEventHandler;
 
@@ -41,13 +39,17 @@ public class MainService extends Service {
             String action = intent.getAction();
             if (action.equals(getString(R.string.ACTION_STOP_SERVICE)) ||
                     action.equals(Intent.ACTION_SHUTDOWN)) {
-                if (mSioManager.isConnected()) {
-                    mSioManager.disconnect();
+                if (mSioManager != null) {
+                    if (mSioManager.isConnected()) {
+                        mSioManager.disconnect();
+                    } else {
+                        // We still need to disconnect to stop the socket from attempting
+                        // reconnections, but we need to fire the event to bound activities
+                        // manually
+                        mSioManager.disconnect();
+                        mEventHandler.sendEmptyMessage(MageEvents.DISCONNECT_EVENT);
+                    }
                 } else {
-                    // We still need to disconnect to stop the socket from attempting
-                    // reconnections, but we need to fire the event to bound activities
-                    // manually
-                    mSioManager.disconnect();
                     mEventHandler.sendEmptyMessage(MageEvents.DISCONNECT_EVENT);
                 }
             }
@@ -109,7 +111,7 @@ public class MainService extends Service {
     public void onDestroy() {
         super.onDestroy();
 
-        if (mSioManager.isConnected()) {
+        if (mSioManager != null && mSioManager.isConnected()) {
             mSioManager.disconnect();
         }
         unregisterReceiver(mStopReceiver);
@@ -123,6 +125,7 @@ public class MainService extends Service {
         // attempt to set up the accessory and forward the port before setting up the
         // SioManager.  IF I can't forward the port though simple Sockets, I'll attempt to
         // set up a VPNService and connect the a Linux TUN/TAP on the other end
+        setupConnection();
 
         startForeground(R.integer.ONGOING_NOTIFICATION_ID, mNotificationBuilder.build());
         return START_STICKY;
@@ -142,13 +145,15 @@ public class MainService extends Service {
 
         boolean useWifi = globalPrefs.getBoolean("pref_key_use_wifi", true);
         if (useWifi) {
+            Log.i(TAG, "Connecting over WiFi");
             String uri = globalPrefs.getString("pref_key_socketio_addr", DEFAULT_URI);
             mSioManager = new SioManager(uri, mEventHandler);
             mSioManager.connect();
         } else {
+            Log.i(TAG, "Connecting over USB");
             mSioManager = new SioManager(DEFAULT_URI, mEventHandler);
-            mAccessoryManager = new AccessoryManager(this, mAccessoryCallbacks);
-            mAccessoryManager.open();
+            mAccessoryBridge = new AccessoryBridge(this, mAccessoryCallbacks);
+            mAccessoryBridge.open();
         }
 
     }
@@ -172,13 +177,16 @@ public class MainService extends Service {
         }
     };
 
-    private final AccessoryManager.Callbacks mAccessoryCallbacks = new AccessoryManager.Callbacks() {
+    private final AccessoryBridge.Callbacks mAccessoryCallbacks = new AccessoryBridge.Callbacks() {
         @Override
         public void onAccessoryConnected(boolean connected) {
             if (connected) {
                 if (mSioManager != null) {
                     mSioManager.connect();
                 }
+                Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
+                        "Accessory Connected");
+                mEventHandler.sendMessage(msg);
             } else {
                 Log.i(TAG, "Error Connecting to Accessory");
                 Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
@@ -189,7 +197,16 @@ public class MainService extends Service {
 
         @Override
         public void onSocketConnected(boolean connected) {
-            Log.i(TAG, "Accessory/Socket Connected");
+            if (connected) {
+                Log.i(TAG, "Accessory/Socket Connected");
+                Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
+                        "Accessory Server Socket Connected");
+                mEventHandler.sendMessage(msg);
+            } else {
+                Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
+                        "Error Connecting to Accessory ServerSocket");
+                mEventHandler.sendMessage(msg);
+            }
         }
 
         @Override
@@ -205,11 +222,10 @@ public class MainService extends Service {
         }
     };
 
-    // TODO:  implement the interface below
     private final MageControlInterface mControlInterface = new MageControlInterface() {
         @Override
         public boolean isConnected() {
-            return mSioManager.isConnected();
+            return mSioManager != null && mSioManager.isConnected();
         }
 
         @Override

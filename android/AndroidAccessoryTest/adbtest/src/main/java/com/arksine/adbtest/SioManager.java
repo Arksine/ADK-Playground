@@ -39,6 +39,10 @@ public class SioManager {
         options.upgrade = true;
         options.secure = false;
 
+        Message msg = mEventHandler.obtainMessage(MageEvents.LOG_EVENT,
+                "Attempting to connect: " + uri);
+        mEventHandler.sendMessage(msg);
+
         try {
             mIoSocket = IO.socket(uri, options);
         } catch (URISyntaxException e) {

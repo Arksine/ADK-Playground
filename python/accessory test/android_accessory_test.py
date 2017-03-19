@@ -13,6 +13,7 @@ from struct import pack, unpack
 import time
 import signal
 import threading
+import os
 from multiprocessing import Queue, Pipe
 import queue
 from bitstring import  BitStream
@@ -88,11 +89,8 @@ class ReadCallback(object):
     def _execute_command(self, data):
         if self._command == CMD_TERMINATE:
             print('Terminate Command Received')
-            global SHUTDOWN
-            SHUTDOWN = True
-            # TODO: need to do this outside of the transfer
-            stop_acc_thread = threading.Thread(target=self._accessory.stop)
-            stop_acc_thread.start()
+            shutdown_thread = threading.Timer(1, self._shutdown_thread_proc)
+            shutdown_thread.start()
             return False
         elif self._command == CMD_EXIT:
             print('Exit app Command Received')
@@ -134,6 +132,10 @@ class ReadCallback(object):
                 self._uvc_process.terminate()
             self._uvc_process = None
 
+    def _shutdown_thread_proc(self):
+        self._stop_uvc_thread_proc()
+        os.kill(os.getpid(), signal.SIGINT)
+
 class AndroidAccessory(object):
     """docstring for AndroidAccessory."""
     def __init__(self, usb_context, write_queue, vendor_id=None, product_id=None):
@@ -173,11 +175,6 @@ class AndroidAccessory(object):
             usb1.TRANSFER_COMPLETED,
             callback_obj,
         )
-
-        self._write_list = []
-        for _ in range(10):
-            writer = self._handle.getTransfer()
-            self._write_list.append(writer)
 
         self._read_list = []
         for _ in range(64):
@@ -295,13 +292,15 @@ class AndroidAccessory(object):
         """
 
         try:
-            while any(x.isSubmitted() for x in self._write_list) or \
-                    any(x.isSubmitted() for x in self._read_list):
+            while any(x.isSubmitted() for x in self._read_list):
                 try:
                     self._context.handleEvents()
                 except usb1.USBErrorInterrupted:
                     pass
                 if not self._is_running:
+                    for xfer in self._read_list:
+                        if xfer.isSubmitted():
+                            xfer.cancel()
                     break
         finally:
             self._handle.releaseInterface(0)
@@ -310,14 +309,10 @@ class AndroidAccessory(object):
         """
         TODO: Docstring
         """
-        self._is_running = False
         self.signal_app_exit()
-        # give two seconds for transfers to complete
-        time.sleep(2)
-        for xlist in (self._write_list, self._read_list):
-            for xfer in xlist:
-                if xfer.isSubmitted():
-                    xfer.cancel()
+        # give one second for transfers to complete
+        time.sleep(1)
+        self._is_running = False
 
     def _write_thread_proc(self):
         # TODO: may want to add a callback for writes
@@ -326,27 +321,8 @@ class AndroidAccessory(object):
                 data = self._write_queue.get(timeout=1)
             except queue.Empty:
                 continue
-            else:
-                for packet in data:
-                    transfer_submitted = False
-                    for xfer in self._write_list:
-                        if not xfer.isSubmitted():
-                            xfer.setBulk(
-                                self._out_endpoint,
-                                packet,
-                            )
-                            xfer.submit()
-                            transfer_submitted = True
-                            break
-
-                    if not transfer_submitted:
-                        new_xfer = self._handle.getTransfer()
-                        self._write_list.append(new_xfer)
-                        new_xfer.setBulk(
-                            self._out_endpoint,
-                            packet,
-                        )
-                        new_xfer.submit()
+            for packet in data:
+                self._handle.bulkWrite(self._out_endpoint, packet)
 
     def write_command(self, command, data):
         """

@@ -1,3 +1,5 @@
+import sys
+
 # USB Definitions
 MANUFACTURER = "Arksine"
 MODEL_NAME = "AccesoryTest"
@@ -15,9 +17,18 @@ ACCESSORY_PID = (0x2D00, 0x2D01, 0x2D04, 0x2D05)
 
 # Command values to be sent to the accessory
 CMD_NONE = b'\x00\x00'
-CMD_CONNECT_SOCKET = b'\x1F\xA5'
+CMD_ACCESSORY_CONNECTED = b'\x01\x01'
+CMD_CONNECT_SOCKET = b'\x02\x02'
 CMD_CLOSE_ACCESSORY = b'\x00\x0A'
+
 
 
 # TODO: currently unused constant for linux, needed to listen for usb connected events
 NETLINK_KOBJECT_UEVENT = 15
+
+def eprint(*args, **kwargs):
+    """
+    Simple helper to print to stderr.  Should work python 2 an 3.
+    """
+    print(*args, file=sys.stderr, **kwargs)
+    

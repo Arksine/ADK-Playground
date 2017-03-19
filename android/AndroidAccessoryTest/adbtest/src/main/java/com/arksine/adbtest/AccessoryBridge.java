@@ -27,14 +27,31 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Manager for simple Usb Accessory comms
  */
 
-class AccessoryManager {
-    private static final String TAG = AccessoryManager.class.getSimpleName();
+/**
+ * TODO: Current implementation seems to work, but I had a random crash that I havent been
+ *  able to duplicate.  I need to test longer to see if the crash is on the python side
+ *  or on the android side.
+ *
+ *  The task now is to decouple the "Accessory Bridge" from the test app, and turn it in
+ *  to a library.  The same should be done on the linux/python side.  Would be nice to get
+ *  it working on windows, but libusb just hasn't caught up, seems to lack too many
+ *  features (reset for example).
+ *
+ *  The future Service/Library should be able to forward multiple connections.  This means
+ *  I need to Mux/Demux connection payloads so I know what socket to forward data to.
+ *
+ *  On the python side, it should listen for connections, and
+ *  when it finds what I am looking for it can fire up the Accessory bridge process
+ */
+class AccessoryBridge {
+    private static final String TAG = AccessoryBridge.class.getSimpleName();
     private static final boolean DEBUG = true;
 
     private static final String MANUFACTURER = "Arksine";
     private static final String MODEL = "AccesoryTest";
     private static final String ACTION_USB_PERMISSION = "com.arksine.adbtest.USB_PERMISSION";
-    private static final byte[] CMD_START_CONNECTION = {(byte) 0x1F, (byte) 0xA5};
+    private static final byte[] CMD_ACCESSORY_CONNECTED = {(byte) 0x01, (byte) 0x01};
+    private static final byte[] CMD_START_CONNECTION = {(byte) 0x02, (byte) 0x02};
     private static final short CMD_EXIT = 15;
 
     interface Callbacks {
@@ -59,17 +76,17 @@ class AccessoryManager {
                     }
 
                     Log.d(TAG, "Accessory permission not granted.");
-                    AccessoryManager.this.mAccessoryCallbacks.onAccessoryConnected(false);
+                    AccessoryBridge.this.mAccessoryCallbacks.onAccessoryConnected(false);
                 }
             } else if (UsbManager.ACTION_USB_ACCESSORY_ATTACHED.equals(action)) {
                 UsbAccessory accessory = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
-                if (AccessoryManager.this.isValidAccessory(accessory)) {
-                    AccessoryManager.this.open(accessory);
+                if (AccessoryBridge.this.isValidAccessory(accessory)) {
+                    AccessoryBridge.this.open(accessory);
                 }
             } else if (UsbManager.ACTION_USB_ACCESSORY_DETACHED.equals(action)) {
                 UsbAccessory accessory = intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
                 if (accessory != null && accessory.equals(mAccessory)){
-                    AccessoryManager.this.close();
+                    AccessoryBridge.this.close();
                 }
             }
         }
@@ -96,7 +113,7 @@ class AccessoryManager {
     private Thread mSocketReadThread = null;
     private Thread mConnectionListenerThread = null ;
 
-    AccessoryManager(Context context, Callbacks accCbs) {
+    AccessoryBridge(Context context, Callbacks accCbs) {
         this.mContext = context;
         this.mAccessoryCallbacks = accCbs;
         this.mUsbManger = (UsbManager) mContext.getSystemService(Context.USB_SERVICE);
@@ -244,6 +261,13 @@ class AccessoryManager {
             FileDescriptor fd = mFileDescriptor.getFileDescriptor();
             mAccessoryOutputStream = new FileOutputStream(fd);
             mAccessoryInputStream = new FileInputStream(fd);
+            try {
+                mAccessoryOutputStream.write(CMD_ACCESSORY_CONNECTED);
+            } catch (IOException e) {
+                mAccessoryCallbacks.onAccessoryConnected(false);
+                close();
+                return;
+            }
             mAccessoryConnected.set(true);
             mAccessoryReadThread = new Thread(null, mAccessoryReadRunnable, "Accessory Read Thread");
             mAccessoryReadThread.start();
@@ -329,7 +353,8 @@ class AccessoryManager {
         @Override
         public void run() {
             try {
-                mServerSocket = new ServerSocket(8000, 0, InetAddress.getLoopbackAddress());
+                // TODO: probably don't need to bind to all interfaces, only localhost
+                mServerSocket = new ServerSocket(8000);
                 mServerConnection = mServerSocket.accept();
                 mSocketInputStream = mServerConnection.getInputStream();
                 mSocketOutputStream = mServerConnection.getOutputStream();
@@ -364,6 +389,7 @@ class AccessoryManager {
 
 
             if (mAccessoryConnected.compareAndSet(true, false)) {
+                // TODO: send terminate command
                 stopThread(mAccessoryReadThread);
                 closeItem(mAccessoryInputStream);
                 closeItem(mAccessoryOutputStream);

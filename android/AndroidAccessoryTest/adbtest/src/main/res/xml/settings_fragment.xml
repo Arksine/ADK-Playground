@@ -4,20 +4,20 @@
         android:key="pref_key_autostart_service"
         android:title="@string/pref_autostart"
         android:summary="@string/pref_autostart_summary"
-        android:defaultValue="false"/>
+        android:defaultValue="true"/>
     <SwitchPreference
-        android:defaultValue="false"
         android:key="pref_key_toggle_service"
-        android:title="@string/pref_toggle_service"/>
+        android:title="@string/pref_toggle_service"
+        android:defaultValue="true"/>
     <CheckBoxPreference
         android:key="pref_key_use_wifi"
         android:title="@string/pref_use_wifi"
         android:summary="@string/pref_use_wifi_summary"
-        android:defaultValue="true"/>
+        android:defaultValue="false"/>
     <EditTextPreference
-        android:defaultValue="@string/pref_sio_addr_default"
-        android:dialogTitle="@string/pref_sio_addr"
         android:key="pref_key_socketio_addr"
+        android:dialogTitle="@string/pref_sio_addr"
         android:dependency="pref_key_use_wifi"
-        android:title="@string/pref_sio_addr"/>
+        android:title="@string/pref_sio_addr"
+        android:defaultValue="@string/pref_sio_addr_default"/>
 </PreferenceScreen>
